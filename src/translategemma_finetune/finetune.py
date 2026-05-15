@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field, fields
 from functools import partial
 from pathlib import Path
 from typing import Any
 
+from translategemma_finetune.templates import format_for_training, format_single_for_prediction
 from transformers import TrainingArguments as HFTrainingArguments
 
 DEFAULT_MODEL = "google/translategemma-4b-it"
@@ -78,7 +78,9 @@ class TrainingArguments(HFTrainingArguments):
     gradient_accumulation_steps: int = field(
         default=4, metadata={"help": "Gradient accumulation steps."}
     )
-    warmup_ratio: int | float = field(default=0.08, metadata={"help": "Warmup ratio if less than 1 or steps if int > 1."})
+    warmup_ratio: int | float = field(
+        default=0.08, metadata={"help": "Warmup ratio if less than 1 or steps if int > 1."}
+    )
     learning_rate: float = field(default=2e-4, metadata={"help": "Learning rate."})
     logging_steps: float = field(default=1, metadata={"help": "Logging interval in steps."})
     optim: str = field(default="adamw_8bit", metadata={"help": "Optimizer name."})
@@ -95,70 +97,6 @@ class TrainingArguments(HFTrainingArguments):
         default=None,
         metadata={"help": f"Save a merged 16-bit model here, e.g. {DEFAULT_MERGED_DIR}."},
     )
-
-
-def format_for_training(
-    examples: dict[str, list[str]],
-    source_lang_code: str = "fr",
-    target_lang_code: str = "mos",
-    source_field: str = "french",
-    target_field: str = "moore",
-) -> dict[str, list[str]]:
-    texts = []
-    sources = examples[source_field]
-    targets = examples[target_field]
-
-    for source, target in zip(sources, targets, strict=True):
-        json_str = json.dumps(
-            [
-                {
-                    "type": "text",
-                    "source_lang_code": source_lang_code,
-                    "target_lang_code": target_lang_code,
-                    "text": source,
-                }
-            ],
-            ensure_ascii=False,
-        )
-        texts.append(f"user\n{json_str}\nmodel\n{target}")
-
-    return {"text": texts}
-
-
-def format_for_prediction(
-    examples: dict[str, list[str]],
-    source_lang_code: str = "fr",
-    target_lang_code: str = "mos",
-    source_field: str = "french",
-) -> dict[str, list[str]]:
-    texts = [
-        format_single_for_prediction(
-            source_text=source,
-            source_lang_code=source_lang_code,
-            target_lang_code=target_lang_code,
-        )
-        for source in examples[source_field]
-    ]
-    return {"text": texts}
-
-
-def format_single_for_prediction(
-    source_text: str,
-    source_lang_code: str = "fr",
-    target_lang_code: str = "mos",
-) -> str:
-    json_str = json.dumps(
-        [
-            {
-                "type": "text",
-                "source_lang_code": source_lang_code,
-                "target_lang_code": target_lang_code,
-                "text": source_text,
-            }
-        ],
-        ensure_ascii=False,
-    )
-    return f"user\n{json_str}\nmodel\n"
 
 
 def parse_args() -> tuple[ModelArguments, DataArguments, TrainingArguments]:

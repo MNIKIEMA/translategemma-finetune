@@ -91,7 +91,9 @@ def update_language_files(
     rendered_block = render_jinja_languages_block(languages)
     updated_template = replace_languages_block(template_text, rendered_block, template_path)
 
-    languages_path.write_text(rendered_json_map, encoding="utf-8")  #TODO: Do we need to write this file?
+    languages_path.write_text(
+        rendered_json_map, encoding="utf-8"
+    )  # TODO: Do we need to write this file?
     new_template_path.write_text(updated_template, encoding="utf-8")
 
     return normalized_new_languages
