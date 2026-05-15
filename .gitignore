@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+unsloth_compiled_cache/
 
 # Virtual environments
 .env
