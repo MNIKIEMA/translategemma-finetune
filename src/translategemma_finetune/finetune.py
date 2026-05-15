@@ -87,7 +87,7 @@ class TrainingArguments(HFTrainingArguments):
     gradient_accumulation_steps: int = field(
         default=4, metadata={"help": "Gradient accumulation steps."}
     )
-    warmup_ratio: int | float = field(
+    warmup_ratio: float = field(
         default=0.08, metadata={"help": "Warmup ratio if less than 1 or steps if int > 1."}
     )
     learning_rate: float = field(default=2e-4, metadata={"help": "Learning rate."})
