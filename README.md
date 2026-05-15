@@ -37,6 +37,23 @@ uv run translategemma-finetune \
   --output_dir outputs/translategemma-4b-it-fr-mos-lora
 ```
 
+Chat templates are applied by default with the tokenizer's bundled template:
+
+```bash
+uv run translategemma-finetune --use_chat_template true
+```
+
+To use a local Jinja chat template with additional language codes, pass its
+path:
+
+```bash
+uv run translategemma-finetune \
+  --use_chat_template true \
+  --chat_template_path chat_template.jinja
+```
+
+If `--chat_template_path` is omitted, the default tokenizer template is used.
+
 By default the script saves the LoRA adapter and tokenizer to `output_dir`.
 Pass `--save_merged_path <path>` to also save a merged 16-bit model.
 

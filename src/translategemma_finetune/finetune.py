@@ -58,6 +58,12 @@ class DataArguments:
     use_chat_template: bool = field(
         default=True, metadata={"help": "Format examples with tokenizer.apply_chat_template()."}
     )
+    chat_template_path: str | None = field(
+        default=None,
+        metadata={
+            "help": "Optional local Jinja chat template path used when --use_chat_template is true."
+        },
+    )
     preview_sample: bool = field(
         default=False,
         metadata={
@@ -132,6 +138,18 @@ def load_tokenizer(model_name: str) -> Any:
     from transformers import AutoProcessor
 
     return AutoProcessor.from_pretrained(model_name)
+
+
+def maybe_apply_chat_template(tokenizer: Any, data_args: DataArguments) -> Any:
+    if not data_args.use_chat_template or data_args.chat_template_path is None:
+        return tokenizer
+
+    path = Path(data_args.chat_template_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Chat template file does not exist: {path}")
+
+    tokenizer.chat_template = path.read_text(encoding="utf-8")
+    return tokenizer
 
 
 def load_model(model_args: ModelArguments) -> tuple[Any, Any]:
@@ -248,12 +266,14 @@ def main() -> None:
 
     if data_args.preview_sample:
         tokenizer = load_tokenizer(model_args.model_name)
+        maybe_apply_chat_template(tokenizer, data_args)
         dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
         print(dataset[0]["text"])
         return
 
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
     model, tokenizer = load_model(model_args)
+    maybe_apply_chat_template(tokenizer, data_args)
     dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
     model = add_lora_adapters(model, model_args, training_args)
     trainer_stats = train(model, tokenizer, dataset, training_args)
