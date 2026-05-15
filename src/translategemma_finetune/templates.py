@@ -55,12 +55,16 @@ def format_for_prediction(
     source_lang_code: str = "fr",
     target_lang_code: str = "mos",
     source_field: str = "french",
+    tokenizer: PreTrainedTokenizer | None = None,
+    use_chat_template: bool = False,
 ) -> dict[str, list[str]]:
     texts = [
         format_single_for_prediction(
             source_text=source,
             source_lang_code=source_lang_code,
             target_lang_code=target_lang_code,
+            tokenizer=tokenizer,
+            use_chat_template=use_chat_template,
         )
         for source in examples[source_field]
     ]

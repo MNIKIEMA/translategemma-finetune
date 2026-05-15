@@ -55,6 +55,9 @@ class DataArguments:
     target_lang_code: str = field(
         default="mos", metadata={"help": "TranslateGemma target language code."}
     )
+    use_chat_template: bool = field(
+        default=True, metadata={"help": "Format examples with tokenizer.apply_chat_template()."}
+    )
     preview_sample: bool = field(
         default=False,
         metadata={
@@ -106,18 +109,29 @@ def parse_args() -> tuple[ModelArguments, DataArguments, TrainingArguments]:
     return parser.parse_args_into_dataclasses()  # ty:ignore[invalid-return-type]
 
 
-def load_training_dataset(data_args: DataArguments) -> Any:
+def load_dataset_split(dataset_name: str, split: str) -> Any:
     from datasets import load_dataset
 
-    dataset = load_dataset(data_args.dataset_name, split=data_args.dataset_split)
+    return load_dataset(dataset_name, split=split)
+
+
+def format_training_dataset(dataset: Any, data_args: DataArguments, tokenizer: Any) -> Any:
     formatter = partial(
         format_for_training,
         source_lang_code=data_args.source_lang_code,
         target_lang_code=data_args.target_lang_code,
         source_field=data_args.source_field,
         target_field=data_args.target_field,
+        tokenizer=tokenizer,
+        use_chat_template=data_args.use_chat_template,
     )
     return dataset.map(formatter, batched=True)
+
+
+def load_tokenizer(model_name: str) -> Any:
+    from transformers import AutoProcessor
+
+    return AutoProcessor.from_pretrained(model_name)
 
 
 def load_model(model_args: ModelArguments) -> tuple[Any, Any]:
@@ -193,8 +207,9 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
         source_text=data_args.test_prompt,
         source_lang_code=data_args.source_lang_code,
         target_lang_code=data_args.target_lang_code,
+        tokenizer=tokenizer,
+        use_chat_template=data_args.use_chat_template,
     )
-    print(prompt)
     model.generate(
         **tokenizer(prompt, return_tensors="pt").to("cuda"),
         max_new_tokens=100,
@@ -229,14 +244,17 @@ def main() -> None:
 
     load_dotenv()
     model_args, data_args, training_args = parse_args()
-    dataset = load_training_dataset(data_args)
+    raw_dataset = load_dataset_split(data_args.dataset_name, data_args.dataset_split)
 
     if data_args.preview_sample:
+        tokenizer = load_tokenizer(model_args.model_name)
+        dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
         print(dataset[0]["text"])
         return
 
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
     model, tokenizer = load_model(model_args)
+    dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
     model = add_lora_adapters(model, model_args, training_args)
     trainer_stats = train(model, tokenizer, dataset, training_args)
     print(trainer_stats)
