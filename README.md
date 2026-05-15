@@ -1,0 +1,49 @@
+# translategemma-finetune
+
+Minimal training utilities for fine-tuning `google/translategemma-4b-it` with
+LoRA adapters using Unsloth and TRL.
+
+## Setup
+
+This project uses Python 3.12 and `uv`.
+
+```bash
+uv sync
+```
+
+## Usage
+
+Preview the formatted first training example without loading the model:
+
+```bash
+uv run translategemma-finetune --preview_sample true
+```
+
+Run a short fine-tuning job with the defaults:
+
+```bash
+uv run translategemma-finetune
+```
+
+Useful options:
+
+```bash
+uv run translategemma-finetune \
+  --dataset_name madoss/fr-mos-final-data \
+  --source_field french \
+  --target_field moore \
+  --source_lang_code fr \
+  --target_lang_code mos \
+  --output_dir outputs/translategemma-4b-it-fr-mos-lora
+```
+
+By default the script saves the LoRA adapter and tokenizer to `output_dir`.
+Pass `--save_merged_path <path>` to also save a merged 16-bit model.
+
+## Development
+
+```bash
+just format
+just lint
+just test
+```
