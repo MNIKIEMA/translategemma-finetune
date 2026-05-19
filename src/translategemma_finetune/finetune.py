@@ -135,11 +135,13 @@ def format_training_dataset(dataset: Any, data_args: DataArguments, tokenizer: A
 
 
 def load_tokenizer(model_args: ModelArguments) -> Any:
-    from transformers import AutoProcessor
+    from transformers import AutoTokenizer
 
-    tokenizer = AutoProcessor.from_pretrained(model_args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
     if hasattr(tokenizer, "model_max_length"):
         tokenizer.model_max_length = model_args.max_seq_length
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
 
