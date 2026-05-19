@@ -238,15 +238,41 @@ def build_sft_config(training_args: TrainingArguments) -> Any:
     return SFTConfig(**sft_kwargs)
 
 
+class Gemma3TextCollator:
+    def __init__(self, collator: Any) -> None:
+        self.collator = collator
+
+    def __call__(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
+        batch = self.collator(examples)
+        batch["token_type_ids"] = batch["input_ids"].new_zeros(batch["input_ids"].shape)
+        return batch
+
+
+def build_data_collator(tokenizer: Any, sft_config: Any) -> Any:
+    from trl.trainer.sft_trainer import DataCollatorForLanguageModeling
+
+    pad_token = sft_config.pad_token or tokenizer.pad_token or tokenizer.eos_token
+    pad_token_id = tokenizer.convert_tokens_to_ids(pad_token)
+    collator = DataCollatorForLanguageModeling(
+        pad_token_id=pad_token_id,
+        completion_only_loss=sft_config.completion_only_loss,
+        padding_free=sft_config.padding_free,
+        pad_to_multiple_of=sft_config.pad_to_multiple_of,
+    )
+    return Gemma3TextCollator(collator)
+
+
 def train(model: Any, tokenizer: Any, dataset: Any, training_args: TrainingArguments) -> Any:
     from trl import SFTTrainer
 
+    sft_config = build_sft_config(training_args)
     trainer = SFTTrainer(
         model=model,
         processing_class=tokenizer,
         train_dataset=dataset,
         eval_dataset=None,
-        args=build_sft_config(training_args),
+        args=sft_config,
+        data_collator=build_data_collator(tokenizer, sft_config),
     )
     return trainer.train()
 
@@ -265,6 +291,7 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
         use_chat_template=data_args.use_chat_template,
     )
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    inputs["token_type_ids"] = inputs["input_ids"].new_zeros(inputs["input_ids"].shape)
     model.eval()
     model.generate(
         **inputs,
