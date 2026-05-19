@@ -140,6 +140,8 @@ def load_tokenizer(model_args: ModelArguments) -> Any:
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
     if hasattr(tokenizer, "model_max_length"):
         tokenizer.model_max_length = model_args.max_seq_length
+    if hasattr(tokenizer, "add_bos_token"):
+        tokenizer.add_bos_token = False
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
@@ -288,7 +290,7 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
         tokenizer=tokenizer,
         use_chat_template=data_args.use_chat_template,
     )
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(model.device)
     inputs["token_type_ids"] = inputs["input_ids"].new_zeros(inputs["input_ids"].shape)
     model.eval()
     outputs = model.generate(
