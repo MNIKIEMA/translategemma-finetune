@@ -134,10 +134,13 @@ def format_training_dataset(dataset: Any, data_args: DataArguments, tokenizer: A
     return dataset.map(formatter, batched=True)
 
 
-def load_tokenizer(model_name: str) -> Any:
+def load_tokenizer(model_args: ModelArguments) -> Any:
     from transformers import AutoProcessor
 
-    return AutoProcessor.from_pretrained(model_name)
+    tokenizer = AutoProcessor.from_pretrained(model_args.model_name)
+    if hasattr(tokenizer, "model_max_length"):
+        tokenizer.model_max_length = model_args.max_seq_length
+    return tokenizer
 
 
 def maybe_apply_chat_template(tokenizer: Any, data_args: DataArguments) -> Any:
@@ -152,39 +155,72 @@ def maybe_apply_chat_template(tokenizer: Any, data_args: DataArguments) -> Any:
     return tokenizer
 
 
-def load_model(model_args: ModelArguments) -> tuple[Any, Any]:
-    from unsloth import FastLanguageModel
+def get_torch_dtype(training_args: TrainingArguments) -> Any:
+    import torch
 
-    return FastLanguageModel.from_pretrained(
-        model_name=model_args.model_name,
-        max_seq_length=model_args.max_seq_length,
-        load_in_4bit=model_args.load_in_4bit,
-        load_in_8bit=model_args.load_in_8bit,
-        full_finetuning=model_args.full_finetuning,
+    if training_args.bf16:
+        return torch.bfloat16
+    if training_args.fp16:
+        return torch.float16
+    return "auto"
+
+
+def load_model(model_args: ModelArguments, training_args: TrainingArguments) -> Any:
+    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+
+    if model_args.load_in_4bit and model_args.load_in_8bit:
+        raise ValueError("Use only one of --load_in_4bit or --load_in_8bit.")
+    if model_args.full_finetuning and (model_args.load_in_4bit or model_args.load_in_8bit):
+        raise ValueError("Full fine-tuning requires --no_load_in_4bit and --load_in_8bit false.")
+
+    quantization_config = None
+    torch_dtype = get_torch_dtype(training_args)
+    if model_args.load_in_4bit or model_args.load_in_8bit:
+        quantization_kwargs = {
+            "load_in_4bit": model_args.load_in_4bit,
+            "load_in_8bit": model_args.load_in_8bit,
+            "bnb_4bit_quant_type": "nf4",
+            "bnb_4bit_use_double_quant": True,
+        }
+        if torch_dtype != "auto":
+            quantization_kwargs["bnb_4bit_compute_dtype"] = torch_dtype
+        quantization_config = BitsAndBytesConfig(**quantization_kwargs)
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_args.model_name,
+        device_map="auto",
+        quantization_config=quantization_config,
+        torch_dtype=torch_dtype,
     )
+    model.config.use_cache = False
+    return model
 
 
 def add_lora_adapters(
     model: Any, model_args: ModelArguments, training_args: TrainingArguments
 ) -> Any:
-    from unsloth import FastLanguageModel
+    if model_args.full_finetuning:
+        return model
 
-    return FastLanguageModel.get_peft_model(
-        model,
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+    if model_args.load_in_4bit or model_args.load_in_8bit:
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=training_args.gradient_checkpointing,
+        )
+
+    peft_config = LoraConfig(
         r=model_args.lora_r,
-        target_modules=list(DEFAULT_TARGET_MODULES),
         lora_alpha=model_args.lora_alpha,
         lora_dropout=model_args.lora_dropout,
         bias="none",
-        use_gradient_checkpointing="unsloth",
-        finetune_vision_layers=False,
-        finetune_language_layers=True,
-        finetune_mlp_modules=True,
-        finetune_attention_modules=True,
-        random_state=training_args.seed,
-        use_rslora=False,
-        loftq_config=None,
+        task_type="CAUSAL_LM",
+        target_modules=list(DEFAULT_TARGET_MODULES),
     )
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
+    return model
 
 
 def build_sft_config(training_args: TrainingArguments) -> Any:
@@ -218,9 +254,7 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
         return
 
     from transformers import TextStreamer
-    from unsloth import FastLanguageModel
 
-    FastLanguageModel.for_inference(model)
     prompt = format_single_for_prediction(
         source_text=data_args.test_prompt,
         source_lang_code=data_args.source_lang_code,
@@ -228,8 +262,10 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
         tokenizer=tokenizer,
         use_chat_template=data_args.use_chat_template,
     )
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    model.eval()
     model.generate(
-        **tokenizer(prompt, return_tensors="pt").to("cuda"),
+        **inputs,
         max_new_tokens=100,
         temperature=0.1,
         top_p=0.8,
@@ -244,11 +280,11 @@ def save_outputs(model: Any, tokenizer: Any, training_args: TrainingArguments) -
         tokenizer.save_pretrained(training_args.output_dir)
 
     if training_args.save_merged_path:
-        model.save_pretrained_merged(
-            training_args.save_merged_path,
-            tokenizer,
-            save_method="merged_16bit",
-        )
+        if not hasattr(model, "merge_and_unload"):
+            raise ValueError("--save_merged_path requires a PEFT LoRA model.")
+        merged_model = model.merge_and_unload()
+        merged_model.save_pretrained(training_args.save_merged_path)
+        tokenizer.save_pretrained(training_args.save_merged_path)
 
     if training_args.push_to_hub:
         if training_args.hub_model_id is None:
@@ -265,15 +301,16 @@ def main() -> None:
     raw_dataset = load_dataset_split(data_args.dataset_name, data_args.dataset_split)
 
     if data_args.preview_sample:
-        tokenizer = load_tokenizer(model_args.model_name)
+        tokenizer = load_tokenizer(model_args)
         maybe_apply_chat_template(tokenizer, data_args)
         dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
         print(dataset[0]["text"])
         return
 
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
-    model, tokenizer = load_model(model_args)
+    tokenizer = load_tokenizer(model_args)
     maybe_apply_chat_template(tokenizer, data_args)
+    model = load_model(model_args, training_args)
     dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
     model = add_lora_adapters(model, model_args, training_args)
     trainer_stats = train(model, tokenizer, dataset, training_args)

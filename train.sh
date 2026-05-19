@@ -8,4 +8,5 @@ export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 uv run translategemma-finetune \
   --use_chat_template true \
   --chat_template_path translategemma_template.jinja \
+  --fp16 true \
   "$@"

@@ -1,7 +1,7 @@
 # translategemma-finetune
 
 Minimal training utilities for fine-tuning `google/translategemma-4b-it` with
-LoRA adapters using Unsloth and TRL.
+LoRA adapters using TRL and PEFT.
 
 ## Setup
 
