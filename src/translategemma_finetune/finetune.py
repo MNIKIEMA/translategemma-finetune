@@ -281,8 +281,6 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
     if not data_args.test_prompt:
         return
 
-    from transformers import TextStreamer
-
     prompt = format_single_for_prediction(
         source_text=data_args.test_prompt,
         source_lang_code=data_args.source_lang_code,
@@ -293,14 +291,15 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     inputs["token_type_ids"] = inputs["input_ids"].new_zeros(inputs["input_ids"].shape)
     model.eval()
-    model.generate(
+    outputs = model.generate(
         **inputs,
         max_new_tokens=100,
         temperature=0.1,
         top_p=0.8,
         top_k=20,
-        streamer=TextStreamer(tokenizer, skip_prompt=True),
     )
+    generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
+    print(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0].strip())
 
 
 def save_outputs(model: Any, tokenizer: Any, training_args: TrainingArguments) -> None:
