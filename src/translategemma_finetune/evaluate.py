@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from sacrebleu.metrics import BLEU, CHRF
+
 from translategemma_finetune.finetune import DEFAULT_OUTPUT_DIR, ModelArguments
 from translategemma_finetune.templates import format_single_for_prediction
 
@@ -205,15 +207,11 @@ def generate_predictions(
     return sources, references, predictions
 
 
-def compute_chrfpp(predictions: list[str], references: list[str]) -> float:
-    try:
-        from sacrebleu.metrics import CHRF
-    except ImportError as exc:
-        raise ImportError(
-            "Install sacrebleu to compute chrF++: `uv add sacrebleu` or `pip install sacrebleu`."
-        ) from exc
-
-    return CHRF(word_order=2).corpus_score(predictions, [references]).score
+def compute_metrics(predictions: list[str], references: list[str]) -> dict[str, float]:
+    return {
+        "bleu": BLEU().corpus_score(predictions, [references]).score,
+        "chrfpp": CHRF(word_order=2).corpus_score(predictions, [references]).score,
+    }
 
 
 def write_predictions(
@@ -259,10 +257,11 @@ def main() -> None:
         data_args,
         eval_args,
     )
-    score = compute_chrfpp(predictions, references)
+    scores = compute_metrics(predictions, references)
     write_predictions(eval_args.output_predictions_path, sources, references, predictions)
 
-    print(f"chrF++: {score:.2f}")
+    print(f"BLEU: {scores['bleu']:.2f}")
+    print(f"chrF++: {scores['chrfpp']:.2f}")
     print(f"examples: {len(predictions)}")
 
 

@@ -65,7 +65,7 @@ If `--chat_template_path` is omitted, the default tokenizer template is used.
 By default the script saves the LoRA adapter and tokenizer to `output_dir`.
 Pass `--save_merged_path <path>` to also save a merged 16-bit model.
 
-Evaluate a fine-tuned LoRA adapter with chrF++:
+Evaluate a fine-tuned LoRA adapter with BLEU and chrF++:
 
 ```bash
 uv run translategemma-evaluate \
@@ -79,7 +79,20 @@ uv run translategemma-evaluate \
 
 The evaluation script loads the base model from `--model_name`, applies the
 adapter from `--adapter_path`, generates translations for the dataset split,
-and reports corpus chrF++.
+and reports corpus BLEU and chrF++.
+
+To evaluate a merged model instead, pass the merged model directory as
+`--model_name` and disable adapter loading with an empty `--adapter_path`:
+
+```bash
+uv run translategemma-evaluate \
+  --model_name translategemma-4b-it_16bit \
+  --adapter_path "" \
+  --dataset_split test \
+  --source_lang_code fr \
+  --target_lang_code mos \
+  --chat_template_path chat_template.jinja
+```
 
 ## Development
 
