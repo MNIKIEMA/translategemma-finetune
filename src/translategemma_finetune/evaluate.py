@@ -137,6 +137,7 @@ def load_model(model_args: ModelArguments, eval_args: EvaluationArguments) -> An
 
         model = PeftModel.from_pretrained(model, eval_args.adapter_path)
 
+    model.config.use_cache = True
     model.eval()
     return model
 
@@ -185,6 +186,7 @@ def generate_predictions(
         generation_kwargs: dict[str, Any] = {
             "max_new_tokens": eval_args.max_new_tokens,
             "do_sample": do_sample,
+            "use_cache": True,
             "pad_token_id": tokenizer.pad_token_id,
         }
         if do_sample:
