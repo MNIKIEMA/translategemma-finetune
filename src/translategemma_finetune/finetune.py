@@ -106,6 +106,10 @@ class TrainingArguments(HFTrainingArguments):
         default=None,
         metadata={"help": f"Save a merged 16-bit model here, e.g. {DEFAULT_MERGED_DIR}."},
     )
+    packing: bool = field(
+        default=False,
+        metadata={"help": "Pack multiple short samples into fixed-length training sequences."},
+    )
 
 
 def parse_args() -> tuple[ModelArguments, DataArguments, TrainingArguments]:

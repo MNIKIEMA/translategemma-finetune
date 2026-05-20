@@ -34,8 +34,12 @@ uv run translategemma-finetune \
   --target_field moore \
   --source_lang_code fr \
   --target_lang_code mos \
+  --packing false \
   --output_dir outputs/translategemma-4b-it-fr-mos-lora
 ```
+
+Pass `--packing true` to let TRL pack multiple short examples into each
+training sequence.
 
 Chat templates are applied by default with the tokenizer's bundled template:
 
