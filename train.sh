@@ -15,5 +15,6 @@ uv run translategemma-finetune \
   --max_grad_norm 1.0 \
   --learning_rate 1e-5 \
   --optim adamw_torch \
+  --save_total_limit 3 \
   --test_prompt "Bonjour, comment allez-vous ?" \
   "$@"
