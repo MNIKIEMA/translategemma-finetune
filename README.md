@@ -43,8 +43,16 @@ Chat templates are applied by default with the tokenizer's bundled template:
 uv run translategemma-finetune --use_chat_template true
 ```
 
-To use a local Jinja chat template with additional language codes, pass its
-path:
+To add a language that is not already in
+`src/translategemma_finetune/languages.json`, generate a local chat template
+from the bundled `translategemma_template.jinja`:
+
+```bash
+uv run translategemma-update-languages "mos=Mooré"
+```
+
+This updates `src/translategemma_finetune/languages.json` and writes
+`chat_template.jinja`. Use the generated template during training:
 
 ```bash
 uv run translategemma-finetune \
