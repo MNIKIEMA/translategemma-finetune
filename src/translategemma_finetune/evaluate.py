@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
+from tqdm import tqdm
 from sacrebleu.metrics import BLEU, CHRF
 
 from translategemma_finetune.finetune import DEFAULT_OUTPUT_DIR, ModelArguments
@@ -143,7 +143,7 @@ def load_model(model_args: ModelArguments, eval_args: EvaluationArguments) -> An
 
 
 def iter_batches(dataset: Any, batch_size: int) -> Any:
-    for start in range(0, len(dataset), batch_size):
+    for start in tqdm(range(0, len(dataset), batch_size), desc="Generating predictions"):
         yield dataset[start : start + batch_size]
 
 
