@@ -5,9 +5,15 @@ cd "$(dirname "$0")"
 
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
-uv run translategemma-finetune \
+if [[ "${USE_UV:-1}" == "1" ]]; then
+  RUN=(uv run translategemma-finetune)
+else
+  RUN=(translategemma-finetune)
+fi
+
+"${RUN[@]}" \
   --use_chat_template true \
-  --chat_template_path translategemma_template.jinja \
+  --chat_template_path chat_template.jinja \
   --fp16 true \
   --output_dir outputs/debug-translategemma-4b-it-fr-mos-lora \
   --max_steps 2 \
