@@ -1,6 +1,6 @@
 # translategemma-finetune
 
-Minimal training utilities for fine-tuning `google/translategemma-4b-it` with
+Minimal training utilities for fine-tuning [translategemma](https://huggingface.co/collections/google/translategemma) with
 LoRA adapters using TRL and PEFT.
 
 ## Setup
