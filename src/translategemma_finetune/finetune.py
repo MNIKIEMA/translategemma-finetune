@@ -174,7 +174,7 @@ def get_torch_dtype(training_args: TrainingArguments) -> Any:
         return torch.bfloat16
     if training_args.fp16:
         return torch.float16
-    return "auto"
+    return torch.float32
 
 
 def load_model(model_args: ModelArguments, training_args: TrainingArguments) -> Any:
@@ -202,7 +202,7 @@ def load_model(model_args: ModelArguments, training_args: TrainingArguments) -> 
         model_args.model_name,
         device_map="auto",
         quantization_config=quantization_config,
-        torch_dtype=torch_dtype,
+        dtype=torch_dtype,
     )
     model.config.use_cache = False
     return model
@@ -278,9 +278,7 @@ def generate_sample(model: Any, processor: Any, data_args: DataArguments) -> Non
     outputs = model.generate(
         **inputs,
         max_new_tokens=100,
-        temperature=0.1,
-        top_p=0.8,
-        top_k=20,
+        do_sample=False,
     )
     generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
     decoder = getattr(processor, "batch_decode", None) or processor.tokenizer.batch_decode
