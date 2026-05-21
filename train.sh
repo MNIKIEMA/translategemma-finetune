@@ -24,5 +24,7 @@ fi
   --save_strategy steps \
   --save_steps 50 \
   --save_total_limit 3 \
+  --load_in_4bit false \
+  --train_sampling_strategy group_by_length \
   --test_prompt "Bonjour, comment allez-vous ?" \
   "$@"

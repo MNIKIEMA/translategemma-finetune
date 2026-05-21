@@ -19,6 +19,8 @@ fi
   --max_steps 2 \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 1 \
+  --train_sampling_strategy group_by_length \
+  --load_in_4bit false \
   --logging_steps 1 \
   --no_save_adapter \
   --test_prompt "Bonjour, comment allez-vous ?" \
