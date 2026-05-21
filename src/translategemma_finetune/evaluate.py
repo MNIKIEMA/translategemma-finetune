@@ -180,7 +180,6 @@ def generate_predictions(
             max_length=model_args.max_seq_length,
             add_special_tokens=False,
         ).to(model.device)
-        inputs["token_type_ids"] = inputs["input_ids"].new_zeros(inputs["input_ids"].shape)
 
         do_sample = eval_args.temperature > 0
         generation_kwargs: dict[str, Any] = {
