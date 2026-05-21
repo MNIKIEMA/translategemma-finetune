@@ -56,7 +56,7 @@ class DataArguments:
         default="mos", metadata={"help": "TranslateGemma target language code."}
     )
     use_chat_template: bool = field(
-        default=True, metadata={"help": "Format examples with tokenizer.apply_chat_template()."}
+        default=True, metadata={"help": "Format examples with processor.apply_chat_template()."}
     )
     chat_template_path: str | None = field(
         default=None,
@@ -101,7 +101,7 @@ class TrainingArguments(HFTrainingArguments):
     report_to: str | None = field(
         default="none", metadata={"help": "Experiment trackers to report to."}
     )
-    save_adapter: bool = field(default=True, metadata={"help": "Save LoRA adapter and tokenizer."})
+    save_adapter: bool = field(default=True, metadata={"help": "Save LoRA adapter and processor."})
     save_merged_path: str | None = field(
         default=None,
         metadata={"help": f"Save a merged 16-bit model here, e.g. {DEFAULT_MERGED_DIR}."},
@@ -125,42 +125,46 @@ def load_dataset_split(dataset_name: str, split: str) -> Any:
     return load_dataset(dataset_name, split=split)
 
 
-def format_training_dataset(dataset: Any, data_args: DataArguments, tokenizer: Any) -> Any:
+def format_training_dataset(dataset: Any, data_args: DataArguments, processor: Any) -> Any:
     formatter = partial(
         format_for_training,
         source_lang_code=data_args.source_lang_code,
         target_lang_code=data_args.target_lang_code,
         source_field=data_args.source_field,
         target_field=data_args.target_field,
-        tokenizer=tokenizer,
+        tokenizer=processor,
         use_chat_template=data_args.use_chat_template,
     )
     return dataset.map(formatter, batched=True)
 
 
-def load_tokenizer(model_args: ModelArguments) -> Any:
-    from transformers import AutoTokenizer
+def load_processor(model_args: ModelArguments) -> Any:
+    from transformers import AutoProcessor
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
+    processor = AutoProcessor.from_pretrained(model_args.model_name)
+    tokenizer = getattr(processor, "tokenizer", processor)
     if hasattr(tokenizer, "model_max_length"):
         tokenizer.model_max_length = model_args.max_seq_length
     if hasattr(tokenizer, "add_bos_token"):
         tokenizer.add_bos_token = False
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    return tokenizer
+    return processor
 
 
-def maybe_apply_chat_template(tokenizer: Any, data_args: DataArguments) -> Any:
+def maybe_apply_chat_template(processor: Any, data_args: DataArguments) -> Any:
     if not data_args.use_chat_template or data_args.chat_template_path is None:
-        return tokenizer
+        return processor
 
     path = Path(data_args.chat_template_path)
     if not path.exists():
         raise FileNotFoundError(f"Chat template file does not exist: {path}")
 
-    tokenizer.chat_template = path.read_text(encoding="utf-8")
-    return tokenizer
+    processor.chat_template = path.read_text(encoding="utf-8")
+    tokenizer = getattr(processor, "tokenizer", None)
+    if tokenizer is not None:
+        tokenizer.chat_template = processor.chat_template
+    return processor
 
 
 def get_torch_dtype(training_args: TrainingArguments) -> Any:
@@ -174,7 +178,7 @@ def get_torch_dtype(training_args: TrainingArguments) -> Any:
 
 
 def load_model(model_args: ModelArguments, training_args: TrainingArguments) -> Any:
-    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+    from transformers import AutoModelForImageTextToText, BitsAndBytesConfig
 
     if model_args.load_in_4bit and model_args.load_in_8bit:
         raise ValueError("Use only one of --load_in_4bit or --load_in_8bit.")
@@ -194,7 +198,7 @@ def load_model(model_args: ModelArguments, training_args: TrainingArguments) -> 
             quantization_kwargs["bnb_4bit_compute_dtype"] = torch_dtype
         quantization_config = BitsAndBytesConfig(**quantization_kwargs)
 
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForImageTextToText.from_pretrained(
         model_args.model_name,
         device_map="auto",
         quantization_config=quantization_config,
@@ -244,46 +248,21 @@ def build_sft_config(training_args: TrainingArguments) -> Any:
     return SFTConfig(**sft_kwargs)
 
 
-class Gemma3TextCollator:
-    def __init__(self, collator: Any) -> None:
-        self.collator = collator
-
-    def __call__(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
-        batch = self.collator(examples)
-        batch["token_type_ids"] = batch["input_ids"].new_zeros(batch["input_ids"].shape)
-        return batch
-
-
-def build_data_collator(tokenizer: Any, sft_config: Any) -> Any:
-    from trl.trainer.sft_trainer import DataCollatorForLanguageModeling
-
-    pad_token = sft_config.pad_token or tokenizer.pad_token or tokenizer.eos_token
-    pad_token_id = tokenizer.convert_tokens_to_ids(pad_token)
-    collator = DataCollatorForLanguageModeling(
-        pad_token_id=pad_token_id,
-        completion_only_loss=sft_config.completion_only_loss,
-        padding_free=sft_config.padding_free,
-        pad_to_multiple_of=sft_config.pad_to_multiple_of,
-    )
-    return Gemma3TextCollator(collator)
-
-
-def train(model: Any, tokenizer: Any, dataset: Any, training_args: TrainingArguments) -> Any:
+def train(model: Any, processor: Any, dataset: Any, training_args: TrainingArguments) -> Any:
     from trl import SFTTrainer
 
     sft_config = build_sft_config(training_args)
     trainer = SFTTrainer(
         model=model,
-        processing_class=tokenizer,
+        processing_class=processor,
         train_dataset=dataset,
         eval_dataset=None,
         args=sft_config,
-        data_collator=build_data_collator(tokenizer, sft_config),
     )
     return trainer.train()
 
 
-def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> None:
+def generate_sample(model: Any, processor: Any, data_args: DataArguments) -> None:
     if not data_args.test_prompt:
         return
 
@@ -291,11 +270,10 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
         source_text=data_args.test_prompt,
         source_lang_code=data_args.source_lang_code,
         target_lang_code=data_args.target_lang_code,
-        tokenizer=tokenizer,
+        tokenizer=processor,
         use_chat_template=data_args.use_chat_template,
     )
-    inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(model.device)
-    inputs["token_type_ids"] = inputs["input_ids"].new_zeros(inputs["input_ids"].shape)
+    inputs = processor(text=prompt, return_tensors="pt", add_special_tokens=False).to(model.device)
     model.eval()
     outputs = model.generate(
         **inputs,
@@ -305,26 +283,27 @@ def generate_sample(model: Any, tokenizer: Any, data_args: DataArguments) -> Non
         top_k=20,
     )
     generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
-    print(tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0].strip())
+    decoder = getattr(processor, "batch_decode", None) or processor.tokenizer.batch_decode
+    print(decoder(generated_tokens, skip_special_tokens=True)[0].strip())
 
 
-def save_outputs(model: Any, tokenizer: Any, training_args: TrainingArguments) -> None:
+def save_outputs(model: Any, processor: Any, training_args: TrainingArguments) -> None:
     if training_args.save_adapter:
         model.save_pretrained(training_args.output_dir)
-        tokenizer.save_pretrained(training_args.output_dir)
+        processor.save_pretrained(training_args.output_dir)
 
     if training_args.save_merged_path:
         if not hasattr(model, "merge_and_unload"):
             raise ValueError("--save_merged_path requires a PEFT LoRA model.")
         merged_model = model.merge_and_unload()
         merged_model.save_pretrained(training_args.save_merged_path)
-        tokenizer.save_pretrained(training_args.save_merged_path)
+        processor.save_pretrained(training_args.save_merged_path)
 
     if training_args.push_to_hub:
         if training_args.hub_model_id is None:
             raise ValueError("--push_to_hub requires --hub_model_id for model.push_to_hub().")
         model.push_to_hub(training_args.hub_model_id)
-        tokenizer.push_to_hub(training_args.hub_model_id)
+        processor.push_to_hub(training_args.hub_model_id)
 
 
 def main() -> None:
@@ -335,22 +314,22 @@ def main() -> None:
     raw_dataset = load_dataset_split(data_args.dataset_name, data_args.dataset_split)
 
     if data_args.preview_sample:
-        tokenizer = load_tokenizer(model_args)
-        maybe_apply_chat_template(tokenizer, data_args)
-        dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
+        processor = load_processor(model_args)
+        maybe_apply_chat_template(processor, data_args)
+        dataset = format_training_dataset(raw_dataset, data_args, processor)
         print(dataset[0]["text"])
         return
 
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
-    tokenizer = load_tokenizer(model_args)
-    maybe_apply_chat_template(tokenizer, data_args)
+    processor = load_processor(model_args)
+    maybe_apply_chat_template(processor, data_args)
     model = load_model(model_args, training_args)
-    dataset = format_training_dataset(raw_dataset, data_args, tokenizer)
+    dataset = format_training_dataset(raw_dataset, data_args, processor)
     model = add_lora_adapters(model, model_args, training_args)
-    trainer_stats = train(model, tokenizer, dataset, training_args)
+    trainer_stats = train(model, processor, dataset, training_args)
     print(trainer_stats)
-    generate_sample(model, tokenizer, data_args)
-    save_outputs(model, tokenizer, training_args)
+    generate_sample(model, processor, data_args)
+    save_outputs(model, processor, training_args)
 
 
 if __name__ == "__main__":
