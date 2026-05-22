@@ -32,6 +32,11 @@ fi
   --optim adamw_8bit \
   --eval_strategy steps \
   --eval_steps 200 \
+  --early_stopping_patience 3 \
+  --early_stopping_threshold 0.0 \
+  --load_best_model_at_end true \
+  --metric_for_best_model eval_loss \
+  --greater_is_better false \
   --save_strategy steps \
   --save_steps 200 \
   --save_total_limit 3 \

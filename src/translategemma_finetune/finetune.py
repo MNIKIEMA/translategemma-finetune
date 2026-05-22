@@ -110,6 +110,16 @@ class TrainingArguments(HFTrainingArguments):
         default=None,
         metadata={"help": f"Save a merged 16-bit model here, e.g. {DEFAULT_MERGED_DIR}."},
     )
+    early_stopping_patience: int | None = field(
+        default=None,
+        metadata={
+            "help": "Enable early stopping after this many evaluations without improvement."
+        },
+    )
+    early_stopping_threshold: float = field(
+        default=0.0,
+        metadata={"help": "Minimum metric improvement required for early stopping."},
+    )
 
 
 def parse_args() -> tuple[ModelArguments, DataArguments, TrainingArguments]:
@@ -248,6 +258,31 @@ def build_sft_config(training_args: TrainingArguments) -> Any:
     return SFTConfig(**sft_kwargs)
 
 
+def build_callbacks(training_args: TrainingArguments, eval_dataset: Any | None) -> list[Any]:
+    callbacks = []
+    if training_args.early_stopping_patience is None:
+        return callbacks
+    if training_args.early_stopping_patience <= 0:
+        raise ValueError("--early_stopping_patience must be greater than 0.")
+    if eval_dataset is None:
+        raise ValueError("--early_stopping_patience requires a validation split.")
+    if not training_args.load_best_model_at_end:
+        raise ValueError(
+            "--early_stopping_patience requires --load_best_model_at_end true. "
+            "Set --metric_for_best_model eval_loss unless you want a different validation metric."
+        )
+
+    from transformers import EarlyStoppingCallback
+
+    callbacks.append(
+        EarlyStoppingCallback(
+            early_stopping_patience=training_args.early_stopping_patience,
+            early_stopping_threshold=training_args.early_stopping_threshold,
+        )
+    )
+    return callbacks
+
+
 def train(
     model: Any,
     processor: Any,
@@ -258,12 +293,14 @@ def train(
     from trl import SFTTrainer
 
     sft_config = build_sft_config(training_args)
+    callbacks = build_callbacks(training_args, eval_dataset)
     trainer = SFTTrainer(
         model=model,
         processing_class=processor,
         train_dataset=dataset,
         eval_dataset=eval_dataset,
         args=sft_config,
+        callbacks=callbacks,
     )
     return trainer.train()
 
