@@ -65,6 +65,14 @@ If `--chat_template_path` is omitted, the default tokenizer template is used.
 By default the script saves the LoRA adapter and tokenizer to `output_dir`.
 Pass `--save_merged_path <path>` to also save a merged 16-bit model.
 
+Merge a saved LoRA adapter into the base model after training:
+
+```bash
+uv run translategemma-merge-lora \
+  --adapter_path outputs/translategemma-4b-it-fr-mos-lora \
+  --output_dir translategemma-4b-it_16bit
+```
+
 Evaluate a fine-tuned LoRA adapter with BLEU and chrF++:
 
 ```bash
