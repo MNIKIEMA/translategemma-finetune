@@ -69,7 +69,7 @@ class EvaluationArguments:
 def parse_args() -> tuple[ModelArguments, EvaluationDataArguments, EvaluationArguments]:
     from transformers import HfArgumentParser
 
-    parser = HfArgumentParser(  # ty:ignore[invalid-argument-type]
+    parser = HfArgumentParser(
         (ModelArguments, EvaluationDataArguments, EvaluationArguments)
     )
     return parser.parse_args_into_dataclasses()  # ty:ignore[invalid-return-type]
@@ -129,7 +129,7 @@ def load_model(model_args: ModelArguments, eval_args: EvaluationArguments) -> An
         model_args.model_name,
         device_map="auto",
         quantization_config=quantization_config,
-        torch_dtype="auto",
+        dtype="auto",
     )
 
     if eval_args.adapter_path:
