@@ -27,6 +27,8 @@ fi
   --num_train_epochs 1 \
   --max_grad_norm 1.0 \
   --learning_rate 1e-5 \
+  --lr_scheduler_type cosine_with_min_lr \
+  --lr_scheduler_kwargs '{"min_lr": 1e-6}' \
   --optim adamw_8bit \
   --save_strategy steps \
   --save_steps 200 \

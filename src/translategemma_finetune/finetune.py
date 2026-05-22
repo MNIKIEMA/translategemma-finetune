@@ -43,6 +43,10 @@ class DataArguments:
         default=DEFAULT_DATASET, metadata={"help": "Hugging Face dataset name."}
     )
     dataset_split: str = field(default="train", metadata={"help": "Dataset split to train on."})
+    validation_split: str | None = field(
+        default="validation",
+        metadata={"help": "Dataset split to use for validation. Pass an empty string to disable."},
+    )
     source_field: str = field(
         default="french", metadata={"help": "Dataset column containing source text."}
     )
@@ -244,7 +248,13 @@ def build_sft_config(training_args: TrainingArguments) -> Any:
     return SFTConfig(**sft_kwargs)
 
 
-def train(model: Any, processor: Any, dataset: Any, training_args: TrainingArguments) -> Any:
+def train(
+    model: Any,
+    processor: Any,
+    dataset: Any,
+    eval_dataset: Any | None,
+    training_args: TrainingArguments,
+) -> Any:
     from trl import SFTTrainer
 
     sft_config = build_sft_config(training_args)
@@ -252,7 +262,7 @@ def train(model: Any, processor: Any, dataset: Any, training_args: TrainingArgum
         model=model,
         processing_class=processor,
         train_dataset=dataset,
-        eval_dataset=None,
+        eval_dataset=eval_dataset,
         args=sft_config,
     )
     return trainer.train()
@@ -319,8 +329,18 @@ def main() -> None:
     maybe_apply_chat_template(processor, data_args)
     model = load_model(model_args, training_args)
     dataset = format_training_dataset(raw_dataset, data_args, processor)
+    raw_eval_dataset = (
+        load_dataset_split(data_args.dataset_name, data_args.validation_split)
+        if data_args.validation_split
+        else None
+    )
+    eval_dataset = (
+        format_training_dataset(raw_eval_dataset, data_args, processor)
+        if raw_eval_dataset is not None
+        else None
+    )
     model = add_lora_adapters(model, model_args, training_args)
-    trainer_stats = train(model, processor, dataset, training_args)
+    trainer_stats = train(model, processor, dataset, eval_dataset, training_args)
     print(trainer_stats)
     generate_sample(model, processor, data_args)
     save_outputs(model, processor, training_args)
