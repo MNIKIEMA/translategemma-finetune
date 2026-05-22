@@ -30,6 +30,8 @@ fi
   --lr_scheduler_type cosine_with_min_lr \
   --lr_scheduler_kwargs '{"min_lr": 1e-6}' \
   --optim adamw_8bit \
+  --eval_strategy steps \
+  --eval_steps 200 \
   --save_strategy steps \
   --save_steps 200 \
   --save_total_limit 3 \
