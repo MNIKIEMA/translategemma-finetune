@@ -17,18 +17,18 @@ fi
   --max_seq_length 512 \
   --fp16 false \
   --bf16 true \
-  --load_in_4bit true \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 16 \
-  --max_steps 200 \
+  --gradient_checkpointing true \
+  --max_steps -1 \
   --num_train_epochs 1 \
   --max_grad_norm 1.0 \
   --learning_rate 1e-5 \
   --optim adamw_8bit \
   --save_strategy steps \
-  --save_steps 50 \
+  --save_steps 200 \
   --save_total_limit 3 \
-  --load_in_4bit false \
+  --load_in_4bit true \
   --train_sampling_strategy group_by_length \
   --test_prompt "Bonjour, comment allez-vous ?" \
   "$@"
