@@ -14,10 +14,14 @@ fi
 "${RUN[@]}" \
   --use_chat_template true \
   --chat_template_path chat_template.jinja \
-  --fp16 true \
+  --max_seq_length 512 \
+  --fp16 false \
+  --bf16 true \
+  --load_in_4bit true \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 16 \
   --max_steps 200 \
+  --num_train_epochs 1 \
   --max_grad_norm 1.0 \
   --learning_rate 1e-5 \
   --optim adamw_8bit \

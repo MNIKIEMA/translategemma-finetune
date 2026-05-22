@@ -16,10 +16,14 @@ fi
   --use_chat_template true \
   --chat_template_path chat_template.jinja \
   --fp16 true \
+  --bf16 true \
+  --load_in_4bit true \
+  --max_seq_length 512 \
   --output_dir outputs/translategemma-4b-it-fr-mos-backtranslated-merged-lora \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 16 \
   --max_steps 200 \
+  --num_train_epochs 1 \
   --max_grad_norm 1.0 \
   --learning_rate 1e-5 \
   --optim adamw_8bit \
