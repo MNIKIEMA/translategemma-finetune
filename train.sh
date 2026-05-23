@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
-if [[ "${USE_UV:-1}" == "1" ]]; then
+if [[ "${USE_UV:-0}" == "1" ]]; then
   RUN=(uv run translategemma-finetune)
 else
   RUN=(translategemma-finetune)
@@ -23,7 +23,7 @@ fi
   --max_steps -1 \
   --num_train_epochs 1 \
   --max_grad_norm 1.0 \
-  --learning_rate 1e-5 \
+  --learning_rate 6e-6 \
   --lr_scheduler_type cosine_with_min_lr \
   --lr_scheduler_kwargs '{"min_lr": 1e-6}' \
   --optim adamw_8bit \
@@ -39,5 +39,7 @@ fi
   --save_total_limit 3 \
   --load_in_4bit true \
   --train_sampling_strategy group_by_length \
+  --run_name translategemma-4b-it-fr-mos-lora \
+  --project moore-web-translategemma \
   --test_prompt "Bonjour, comment allez-vous ?" \
   "$@"

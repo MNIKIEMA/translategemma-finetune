@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, fields
 from functools import partial
 from pathlib import Path
@@ -104,6 +105,10 @@ class TrainingArguments(HFTrainingArguments):
     seed: int = field(default=3407, metadata={"help": "Random seed."})
     report_to: str | None = field(
         default="none", metadata={"help": "Experiment trackers to report to."}
+    )
+    project: str | None = field(
+        default=None,
+        metadata={"help": "Optional W&B project name. Equivalent to setting WANDB_PROJECT."},
     )
     save_adapter: bool = field(default=True, metadata={"help": "Save LoRA adapter and processor."})
     save_merged_path: str | None = field(
@@ -352,6 +357,8 @@ def main() -> None:
 
     load_dotenv()
     model_args, data_args, training_args = parse_args()
+    if training_args.project:
+        os.environ["WANDB_PROJECT"] = training_args.project
     raw_dataset = load_dataset_split(data_args.dataset_name, data_args.dataset_split)
 
     if data_args.preview_sample:
