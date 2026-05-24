@@ -39,6 +39,7 @@ fi
   --save_total_limit 3 \
   --load_in_4bit true \
   --train_sampling_strategy group_by_length \
+  --report_to wandb \
   --run_name translategemma-4b-it-fr-mos-lora \
   --project moore-web-translategemma \
   --test_prompt "Bonjour, comment allez-vous ?" \

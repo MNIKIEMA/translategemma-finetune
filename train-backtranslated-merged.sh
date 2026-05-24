@@ -39,6 +39,7 @@ fi
   --greater_is_better false \
   --save_strategy steps \
   --save_steps 200 \
+  --report_to wandb \
   --save_total_limit 3 \
   --run_name translategemma-4b-it-fr-mos-backtrans-lora \
   --project moore-web-translategemma \
