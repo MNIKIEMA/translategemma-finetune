@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from translategemma_finetune.templates import format_for_training, format_single_for_prediction
-from transformers import TrainingArguments as HFTrainingArguments
+from transformers import TrainerCallback, TrainingArguments as HFTrainingArguments
 
 DEFAULT_MODEL = "google/translategemma-4b-it"
 DEFAULT_DATASET = "madoss/fr-mos-final-data"
@@ -77,6 +77,14 @@ class DataArguments:
     )
     test_prompt: str | None = field(
         default=None, metadata={"help": "Generate from this source text after training."}
+    )
+    wandb_eval_samples: int = field(
+        default=4,
+        metadata={"help": "Number of validation predictions to log to W&B after evaluation."},
+    )
+    wandb_eval_max_new_tokens: int = field(
+        default=128,
+        metadata={"help": "Maximum new tokens for W&B validation prediction samples."},
     )
 
 
@@ -182,6 +190,19 @@ def maybe_apply_chat_template(processor: Any, data_args: DataArguments) -> Any:
     return processor
 
 
+def get_eos_token_ids(tokenizer: Any) -> list[int] | int | None:
+    eos_token_id = tokenizer.eos_token_id
+    end_of_turn_id = tokenizer.convert_tokens_to_ids("<end_of_turn>")
+    eos_token_ids = [
+        token_id
+        for token_id in (eos_token_id, end_of_turn_id)
+        if isinstance(token_id, int) and token_id >= 0
+    ]
+    if not eos_token_ids:
+        return eos_token_id
+    return list(dict.fromkeys(eos_token_ids))
+
+
 def get_torch_dtype(training_args: TrainingArguments) -> Any:
     import torch
 
@@ -263,8 +284,113 @@ def build_sft_config(training_args: TrainingArguments) -> Any:
     return SFTConfig(**sft_kwargs)
 
 
-def build_callbacks(training_args: TrainingArguments, eval_dataset: Any | None) -> list[Any]:
+class WandbPredictionCallback(TrainerCallback):
+    def __init__(
+        self,
+        processor: Any,
+        raw_eval_dataset: Any | None,
+        data_args: DataArguments,
+    ) -> None:
+        self.processor = processor
+        self.data_args = data_args
+        self.samples = []
+        sample_count = max(data_args.wandb_eval_samples, 0)
+        if raw_eval_dataset is None or sample_count == 0:
+            return
+        for index in range(min(sample_count, len(raw_eval_dataset))):
+            row = raw_eval_dataset[index]
+            self.samples.append(
+                {
+                    "index": index,
+                    "source": row[data_args.source_field],
+                    "reference": row[data_args.target_field],
+                }
+            )
+
+    def on_evaluate(
+        self,
+        args: Any,
+        state: Any,
+        control: Any,
+        model: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if model is None or not self.samples or not state.is_world_process_zero:
+            return
+
+        try:
+            import wandb
+        except ImportError:
+            return
+        if wandb.run is None:
+            return
+
+        tokenizer = getattr(self.processor, "tokenizer", self.processor)
+        prompts = [
+            format_single_for_prediction(
+                source_text=sample["source"],
+                source_lang_code=self.data_args.source_lang_code,
+                target_lang_code=self.data_args.target_lang_code,
+                tokenizer=self.processor,
+                use_chat_template=self.data_args.use_chat_template,
+            )
+            for sample in self.samples
+        ]
+        max_length = getattr(tokenizer, "model_max_length", None)
+        if not isinstance(max_length, int) or max_length > 100_000:
+            max_length = None
+        inputs = self.processor(
+            text=prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=max_length is not None,
+            max_length=max_length,
+            add_special_tokens=False,
+        ).to(model.device)
+
+        was_training = model.training
+        model.eval()
+        import torch
+
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=self.data_args.wandb_eval_max_new_tokens,
+                do_sample=False,
+                eos_token_id=get_eos_token_ids(tokenizer),
+                pad_token_id=tokenizer.pad_token_id,
+            )
+        if was_training:
+            model.train()
+
+        generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
+        decoder = getattr(self.processor, "batch_decode", None) or tokenizer.batch_decode
+        predictions = [
+            prediction.strip()
+            for prediction in decoder(generated_tokens, skip_special_tokens=True)
+        ]
+        table = wandb.Table(columns=["step", "index", "source", "reference", "prediction"])
+        for sample, prediction in zip(self.samples, predictions, strict=True):
+            table.add_data(
+                state.global_step,
+                sample["index"],
+                sample["source"],
+                sample["reference"],
+                prediction,
+            )
+        wandb.log({"eval/predictions": table}, step=state.global_step)
+
+
+def build_callbacks(
+    training_args: TrainingArguments,
+    data_args: DataArguments,
+    processor: Any,
+    raw_eval_dataset: Any | None,
+    eval_dataset: Any | None,
+) -> list[Any]:
     callbacks = []
+    if data_args.wandb_eval_samples > 0:
+        callbacks.append(WandbPredictionCallback(processor, raw_eval_dataset, data_args))
     if training_args.early_stopping_patience is None:
         return callbacks
     if training_args.early_stopping_patience <= 0:
@@ -294,11 +420,19 @@ def train(
     dataset: Any,
     eval_dataset: Any | None,
     training_args: TrainingArguments,
+    data_args: DataArguments,
+    raw_eval_dataset: Any | None,
 ) -> Any:
     from trl import SFTTrainer
 
     sft_config = build_sft_config(training_args)
-    callbacks = build_callbacks(training_args, eval_dataset)
+    callbacks = build_callbacks(
+        training_args,
+        data_args,
+        processor,
+        raw_eval_dataset,
+        eval_dataset,
+    )
     trainer = SFTTrainer(
         model=model,
         processing_class=processor,
@@ -321,12 +455,15 @@ def generate_sample(model: Any, processor: Any, data_args: DataArguments) -> Non
         tokenizer=processor,
         use_chat_template=data_args.use_chat_template,
     )
+    tokenizer = getattr(processor, "tokenizer", processor)
     inputs = processor(text=prompt, return_tensors="pt", add_special_tokens=False).to(model.device)
     model.eval()
     outputs = model.generate(
         **inputs,
         max_new_tokens=100,
         do_sample=False,
+        eos_token_id=get_eos_token_ids(tokenizer),
+        pad_token_id=tokenizer.pad_token_id,
     )
     generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
     decoder = getattr(processor, "batch_decode", None) or processor.tokenizer.batch_decode
@@ -384,7 +521,15 @@ def main() -> None:
         else None
     )
     model = add_lora_adapters(model, model_args, training_args)
-    trainer_stats = train(model, processor, dataset, eval_dataset, training_args)
+    trainer_stats = train(
+        model,
+        processor,
+        dataset,
+        eval_dataset,
+        training_args,
+        data_args,
+        raw_eval_dataset,
+    )
     print(trainer_stats)
     generate_sample(model, processor, data_args)
     save_outputs(model, processor, training_args)

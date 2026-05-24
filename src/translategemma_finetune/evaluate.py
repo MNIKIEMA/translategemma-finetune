@@ -7,7 +7,7 @@ from typing import Any
 from tqdm import tqdm
 from sacrebleu.metrics import BLEU, CHRF
 
-from translategemma_finetune.finetune import DEFAULT_OUTPUT_DIR, ModelArguments
+from translategemma_finetune.finetune import DEFAULT_OUTPUT_DIR, ModelArguments, get_eos_token_ids
 from translategemma_finetune.templates import format_single_for_prediction
 
 
@@ -187,6 +187,7 @@ def generate_predictions(
             "do_sample": do_sample,
             "use_cache": True,
             "pad_token_id": tokenizer.pad_token_id,
+            "eos_token_id": get_eos_token_ids(tokenizer),
         }
         if do_sample:
             generation_kwargs.update(
