@@ -61,6 +61,10 @@ class EvaluationArguments:
     )
     top_p: float = field(default=0.9, metadata={"help": "Top-p value when sampling."})
     top_k: int = field(default=50, metadata={"help": "Top-k value when sampling."})
+    repetition_penalty: float = field(
+        default=1.0,
+        metadata={"help": "Penalty for repeated tokens during generation. 1.0 disables it."},
+    )
     output_predictions_path: str | None = field(
         default=None, metadata={"help": "Optional JSONL path for sources, references, predictions."}
     )
@@ -188,6 +192,7 @@ def generate_predictions(
             "use_cache": True,
             "pad_token_id": tokenizer.pad_token_id,
             "eos_token_id": get_eos_token_ids(tokenizer),
+            "repetition_penalty": eval_args.repetition_penalty,
         }
         if do_sample:
             generation_kwargs.update(
