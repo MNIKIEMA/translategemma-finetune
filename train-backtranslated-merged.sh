@@ -15,13 +15,15 @@ fi
   --dataset_name madoss/fr-mos-final-data-backtranslated-merged \
   --use_chat_template true \
   --chat_template_path chat_template.jinja \
+  --lora_r 128 \
+  --lora_alpha 256 \
   --fp16 false \
   --bf16 true \
   --load_in_4bit true \
   --max_seq_length 512 \
   --output_dir outputs/translategemma-4b-it-fr-mos-backtranslated-merged-lora \
-  --per_device_train_batch_size 1 \
-  --gradient_accumulation_steps 16 \
+  --per_device_train_batch_size 16 \
+  --gradient_accumulation_steps 2 \
   --gradient_checkpointing true \
   --max_steps 200 \
   --num_train_epochs 1 \
@@ -40,7 +42,7 @@ fi
   --save_strategy steps \
   --save_steps 200 \
   --report_to wandb \
-  --save_total_limit 3 \
+  --save_total_limit 5 \
   --run_name translategemma-4b-it-fr-mos-backtrans-lora \
   --project moore-web-translategemma \
   --test_prompt "Bonjour, comment allez-vous ?" \

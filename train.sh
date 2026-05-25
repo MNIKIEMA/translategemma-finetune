@@ -14,11 +14,13 @@ fi
 "${RUN[@]}" \
   --use_chat_template true \
   --chat_template_path chat_template.jinja \
+  --lora_r 128 \
+  --lora_alpha 256 \
   --max_seq_length 512 \
   --fp16 false \
   --bf16 true \
-  --per_device_train_batch_size 1 \
-  --gradient_accumulation_steps 16 \
+  --per_device_train_batch_size 16 \
+  --gradient_accumulation_steps 2 \
   --gradient_checkpointing true \
   --max_steps -1 \
   --num_train_epochs 1 \
@@ -36,7 +38,7 @@ fi
   --greater_is_better false \
   --save_strategy steps \
   --save_steps 200 \
-  --save_total_limit 3 \
+  --save_total_limit 5 \
   --load_in_4bit true \
   --train_sampling_strategy group_by_length \
   --report_to wandb \
