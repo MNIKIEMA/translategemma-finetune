@@ -25,6 +25,18 @@ Run a short fine-tuning job with the defaults:
 uv run translategemma-finetune
 ```
 
+Evaluate the test split immediately after training and log BLEU, chrF++, and
+the generated predictions table to W&B:
+
+```bash
+uv run translategemma-finetune \
+  --report_to wandb \
+  --project moore-web-translategemma \
+  --test_split test \
+  --test_batch_size 4 \
+  --test_max_new_tokens 128
+```
+
 Useful options:
 
 ```bash

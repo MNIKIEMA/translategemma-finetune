@@ -48,6 +48,10 @@ class DataArguments:
         default="validation",
         metadata={"help": "Dataset split to use for validation. Pass an empty string to disable."},
     )
+    test_split: str | None = field(
+        default=None,
+        metadata={"help": "Dataset split to evaluate after training. Pass e.g. --test_split test."},
+    )
     source_field: str = field(
         default="french", metadata={"help": "Dataset column containing source text."}
     )
@@ -85,6 +89,16 @@ class DataArguments:
     wandb_eval_max_new_tokens: int = field(
         default=128,
         metadata={"help": "Maximum new tokens for W&B validation prediction samples."},
+    )
+    test_batch_size: int = field(
+        default=4, metadata={"help": "Post-training test generation batch size."}
+    )
+    test_max_new_tokens: int = field(
+        default=128, metadata={"help": "Maximum new tokens for post-training test generation."}
+    )
+    max_test_samples: int | None = field(
+        default=None,
+        metadata={"help": "Limit post-training test evaluation to the first N examples."},
     )
 
 
@@ -444,6 +458,122 @@ def train(
     return trainer.train()
 
 
+def iter_batches(dataset: Any, batch_size: int) -> Any:
+    for start in range(0, len(dataset), batch_size):
+        yield dataset[start : start + batch_size]
+
+
+def generate_predictions(
+    model: Any,
+    processor: Any,
+    raw_dataset: Any,
+    data_args: DataArguments,
+) -> tuple[list[str], list[str], list[str]]:
+    import torch
+
+    tokenizer = getattr(processor, "tokenizer", processor)
+    decoder = getattr(processor, "batch_decode", None) or tokenizer.batch_decode
+    predictions: list[str] = []
+    references: list[str] = []
+    sources: list[str] = []
+    max_length = getattr(tokenizer, "model_max_length", None)
+    if not isinstance(max_length, int) or max_length > 100_000:
+        max_length = None
+
+    was_training = model.training
+    model.eval()
+    with torch.no_grad():
+        for batch in iter_batches(raw_dataset, data_args.test_batch_size):
+            batch_sources = batch[data_args.source_field]
+            batch_references = batch[data_args.target_field]
+            prompts = [
+                format_single_for_prediction(
+                    source_text=source,
+                    source_lang_code=data_args.source_lang_code,
+                    target_lang_code=data_args.target_lang_code,
+                    tokenizer=processor,
+                    use_chat_template=data_args.use_chat_template,
+                )
+                for source in batch_sources
+            ]
+            inputs = processor(
+                text=prompts,
+                return_tensors="pt",
+                padding=True,
+                truncation=max_length is not None,
+                max_length=max_length,
+                add_special_tokens=False,
+            ).to(model.device)
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=data_args.test_max_new_tokens,
+                do_sample=False,
+                eos_token_id=get_eos_token_ids(tokenizer),
+                pad_token_id=tokenizer.pad_token_id,
+            )
+            generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
+            batch_predictions = decoder(generated_tokens, skip_special_tokens=True)
+            sources.extend(batch_sources)
+            references.extend(batch_references)
+            predictions.extend(prediction.strip() for prediction in batch_predictions)
+
+    if was_training:
+        model.train()
+    return sources, references, predictions
+
+
+def compute_translation_metrics(predictions: list[str], references: list[str]) -> dict[str, float]:
+    from sacrebleu.metrics import BLEU, CHRF
+
+    return {
+        "bleu": BLEU().corpus_score(predictions, [references]).score,
+        "chrfpp": CHRF(word_order=2).corpus_score(predictions, [references]).score,
+    }
+
+
+def evaluate_test_set(model: Any, processor: Any, data_args: DataArguments) -> None:
+    if not data_args.test_split:
+        return
+
+    raw_test_dataset = load_dataset_split(data_args.dataset_name, data_args.test_split)
+    if data_args.max_test_samples is not None:
+        raw_test_dataset = raw_test_dataset.select(
+            range(min(data_args.max_test_samples, len(raw_test_dataset)))
+        )
+
+    sources, references, predictions = generate_predictions(
+        model,
+        processor,
+        raw_test_dataset,
+        data_args,
+    )
+    metrics = compute_translation_metrics(predictions, references)
+    print(f"test BLEU: {metrics['bleu']:.2f}")
+    print(f"test chrF++: {metrics['chrfpp']:.2f}")
+    print(f"test examples: {len(predictions)}")
+
+    try:
+        import wandb
+    except ImportError:
+        return
+    if wandb.run is None:
+        return
+
+    table = wandb.Table(columns=["index", "source", "reference", "prediction"])
+    for index, (source, reference, prediction) in enumerate(
+        zip(sources, references, predictions, strict=True)
+    ):
+        table.add_data(index, source, reference, prediction)
+    wandb.log(
+        {
+            "test/bleu": metrics["bleu"],
+            "test/chrfpp": metrics["chrfpp"],
+            "test/examples": len(predictions),
+            "test/predictions": table,
+        }
+    )
+
+
 def generate_sample(model: Any, processor: Any, data_args: DataArguments) -> None:
     if not data_args.test_prompt:
         return
@@ -531,6 +661,7 @@ def main() -> None:
         raw_eval_dataset,
     )
     print(trainer_stats)
+    evaluate_test_set(model, processor, data_args)
     generate_sample(model, processor, data_args)
     save_outputs(model, processor, training_args)
 
