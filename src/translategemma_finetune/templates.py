@@ -39,6 +39,15 @@ def add_languages_to_chat_template(chat_template: str, languages: dict[str, str]
     return chat_template[: match.end()] + entries + chat_template[match.end() :]
 
 
+def raw_prompt_prefix(tokenizer: PreTrainedTokenizer | None) -> str:
+    """Return the ``<bos>`` that the chat template would add, for the raw prompt format.
+
+    Prompts are tokenized with ``add_special_tokens=False``, so the text must carry it.
+    """
+    tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    return getattr(tokenizer, "bos_token", None) or ""
+
+
 def create_chat_messages(
     source_text: str,
     target_text: str | None = None,
@@ -131,7 +140,7 @@ def format_single_for_prediction(
         )  # ty:ignore[invalid-return-type]
 
     json_str = json.dumps(messages[0]["content"], ensure_ascii=False)
-    return f"user\n{json_str}\nmodel\n"
+    return f"{raw_prompt_prefix(tokenizer)}user\n{json_str}\nmodel\n"
 
 
 def format_for_training(
@@ -163,7 +172,8 @@ def format_for_training(
             )
         else:
             json_str = json.dumps(messages[0]["content"], ensure_ascii=False)
-            text = f"user\n{json_str}\nmodel\n{messages[1]['content']}"
+            prefix = raw_prompt_prefix(tokenizer)
+            text = f"{prefix}user\n{json_str}\nmodel\n{messages[1]['content']}"
 
         texts.append(text)
 
