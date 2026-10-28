@@ -6,42 +6,42 @@ cd "$(dirname "$0")"
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 if [[ "${USE_UV:-0}" == "1" ]]; then
-  RUN=(uv run translategemma-finetune)
+  RUN=(uv run translategemma train)
 else
-  RUN=(translategemma-finetune)
+  RUN=(translategemma train)
 fi
 
 "${RUN[@]}" \
-  --use_chat_template true \
-  --lora_r 128 \
-  --lora_alpha 256 \
-  --max_seq_length 512 \
+  --test true \
+  --lora-r 128 \
+  --lora-alpha 256 \
+  --max-seq-length 512 \
   --fp16 false \
   --bf16 true \
-  --per_device_train_batch_size 16 \
-  --gradient_accumulation_steps 2 \
-  --gradient_checkpointing true \
-  --max_steps -1 \
-  --num_train_epochs 1 \
-  --max_grad_norm 1.0 \
-  --learning_rate 6e-6 \
-  --lr_scheduler_type cosine_with_min_lr \
-  --lr_scheduler_kwargs '{"min_lr": 1e-6}' \
+  --per-device-train-batch-size 16 \
+  --gradient-accumulation-steps 2 \
+  --gradient-checkpointing true \
+  --max-steps -1 \
+  --num-train-epochs 1 \
+  --max-grad-norm 1.0 \
+  --learning-rate 6e-6 \
+  --lr-scheduler-type cosine_with_min_lr \
+  --lr-scheduler-kwargs '{"min_lr": 1e-6}' \
   --optim adamw_8bit \
-  --eval_strategy steps \
-  --eval_steps 200 \
-  --early_stopping_patience 3 \
-  --early_stopping_threshold 0.0 \
-  --load_best_model_at_end true \
-  --metric_for_best_model eval_loss \
-  --greater_is_better false \
-  --save_strategy steps \
-  --save_steps 200 \
-  --save_total_limit 5 \
-  --load_in_4bit true \
-  --train_sampling_strategy group_by_length \
-  --report_to wandb \
-  --run_name translategemma-4b-it-fr-mos-lora \
+  --eval-strategy steps \
+  --eval-steps 200 \
+  --early-stopping-patience 3 \
+  --early-stopping-threshold 0.0 \
+  --load-best-model-at-end true \
+  --metric-for-best-model eval_loss \
+  --greater-is-better false \
+  --save-strategy steps \
+  --save-steps 200 \
+  --save-total-limit 5 \
+  --load-in-4bit true \
+  --train-sampling-strategy group_by_length \
+  --report-to wandb \
+  --run-name translategemma-4b-it-fr-mos-lora \
   --project moore-web-translategemma \
-  --test_prompt "Bonjour, comment allez-vous ?" \
+  --test-prompt "Bonjour, comment allez-vous ?" \
   "$@"

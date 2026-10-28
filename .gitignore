@@ -11,3 +11,6 @@ unsloth_compiled_cache/
 .env
 .venv
 mynotes.md
+
+# Generated training data
+data/

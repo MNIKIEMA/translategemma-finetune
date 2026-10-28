@@ -6,22 +6,21 @@ cd "$(dirname "$0")"
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 if [[ "${USE_UV:-1}" == "1" ]]; then
-  RUN=(uv run translategemma-finetune)
+  RUN=(uv run translategemma train)
 else
-  RUN=(translategemma-finetune)
+  RUN=(translategemma train)
 fi
 
 "${RUN[@]}" \
-  --use_chat_template true \
   --fp16 true \
-  --output_dir outputs/debug-translategemma-4b-it-fr-mos-lora \
-  --max_steps 20 \
-  --learning_rate 1e-5 \
-  --per_device_train_batch_size 1 \
-  --gradient_accumulation_steps 1 \
-  --train_sampling_strategy group_by_length \
-  --load_in_4bit false \
-  --logging_steps 1 \
-  --no_save_adapter \
-  --test_prompt "Bonjour, comment allez-vous ?" \
+  --output-dir outputs/debug-translategemma-4b-it-fr-mos-lora \
+  --max-steps 20 \
+  --learning-rate 1e-5 \
+  --per-device-train-batch-size 1 \
+  --gradient-accumulation-steps 1 \
+  --train-sampling-strategy group_by_length \
+  --load-in-4bit false \
+  --logging-steps 1 \
+  --no-save-adapter \
+  --test-prompt "Bonjour, comment allez-vous ?" \
   "$@"

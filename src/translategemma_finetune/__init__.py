@@ -1,4 +1,1 @@
-from translategemma_finetune.finetune import main
-
-
-__all__ = ["main"]
+"""Fine-tune TranslateGemma for French <-> Mooré. Run `translategemma --help`."""

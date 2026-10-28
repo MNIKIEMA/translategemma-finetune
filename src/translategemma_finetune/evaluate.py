@@ -1,195 +1,137 @@
+"""Score a model with BLEU and chrF++, per direction.
+
+Prompts are rendered and tokenized locally, so they match the training format exactly, and
+generation runs offline with vLLM in a Modal function (``modal_generate.py``).
+"""
+
 from __future__ import annotations
 
+import argparse
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from sacrebleu.metrics import BLEU, CHRF
 
-from translategemma_finetune.finetune import ModelArguments, get_eos_token_ids
-from translategemma_finetune.templates import (
-    add_languages_to_chat_template,
-    format_single_for_prediction,
-    parse_extra_languages,
+from translategemma_finetune.data import (
+    DEFAULT_EVAL_SPLITS,
+    DIRECTIONS,
+    EVAL_SETS,
+    SOURCE_COLUMN,
+    TARGET_COLUMN,
+    load_eval_set,
 )
+from translategemma_finetune.finetune import (
+    DEFAULT_MODEL,
+    directions,
+    get_eos_token_ids,
+    maybe_apply_chat_template,
+    metrics_by_direction,
+)
+from translategemma_finetune.templates import format_single_for_prediction
 
 
-DEFAULT_DATASET = "madoss/fr-mos-final-data"
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="translategemma eval", description=__doc__.split("\n")[0])
+    parser.add_argument(
+        "data",
+        help=f"{' or '.join(EVAL_SETS)}, a mix directory (e.g. data/fra-mos-mix), a .jsonl/.parquet "
+        "file, or a Hub dataset with french/moore columns.",
+    )
+    parser.add_argument(
+        "--split",
+        help="Split to score. Defaults: "
+        + ", ".join(f"{name} {split}" for name, split in DEFAULT_EVAL_SPLITS.items())
+        + ", otherwise test.",
+    )
+    parser.add_argument("--direction", choices=[*DIRECTIONS, "both"], default="both")
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help="Model on Modal: an HF repo id or a /models/... path in the translategemma-models "
+        "volume.",
+    )
+    parser.add_argument(
+        "--adapter", help="LoRA adapter on Modal: an HF repo id or /models/... path."
+    )
+    parser.add_argument(
+        "--tokenizer", default=DEFAULT_MODEL, help="Tokenizer used to render the prompts locally."
+    )
+    parser.add_argument("--max-samples", type=int, help="Score only the first N rows.")
+    parser.add_argument("--output", type=Path, help="Write sources, references, predictions here.")
+
+    prompt = parser.add_argument_group("prompt")
+    prompt.add_argument(
+        "--use-chat-template",
+        type=lambda value: value.lower() in {"true", "1", "yes"},
+        default=True,
+        metavar="{true,false}",
+        help="false uses the raw `user\\n{json}\\nmodel\\n` format (default: true).",
+    )
+    prompt.add_argument("--chat-template-path", help="Use this Jinja template file.")
+    prompt.add_argument(
+        "--extra-languages",
+        nargs="+",
+        default=["mos_Latn=Mossi"],
+        metavar="CODE=NAME",
+        help="Languages added to the chat template.",
+    )
+    prompt.add_argument("--max-prompt-tokens", type=int, default=256)
+
+    sampling = parser.add_argument_group("sampling")
+    sampling.add_argument("--max-new-tokens", type=int, default=128)
+    sampling.add_argument("--temperature", type=float, default=0.0, help="0 decodes greedily.")
+    sampling.add_argument("--top-p", type=float, default=0.9)
+    sampling.add_argument("--top-k", type=int, default=50)
+    sampling.add_argument("--repetition-penalty", type=float, default=1.0)
+    return parser.parse_args(argv)
 
 
-@dataclass
-class EvaluationDataArguments:
-    dataset_name: str = field(
-        default=DEFAULT_DATASET, metadata={"help": "Hugging Face dataset name."}
-    )
-    dataset_split: str = field(default="test", metadata={"help": "Dataset split to evaluate on."})
-    data_files: str | None = field(
-        default=None,
-        metadata={
-            "help": "Load only this file from --dataset_name, e.g. benchmark_data/sentence_level/"
-            "dev/fra_Latn-mos_Latn.parquet for facebook/bouquet. Its rows are in split 'train'."
-        },
-    )
-    source_field: str = field(
-        default="french", metadata={"help": "Dataset column containing source text."}
-    )
-    target_field: str = field(
-        default="moore", metadata={"help": "Dataset column containing reference translation."}
-    )
-    source_lang_code: str = field(
-        default="fr", metadata={"help": "TranslateGemma source language code."}
-    )
-    target_lang_code: str = field(
-        default="mos_Latn", metadata={"help": "TranslateGemma target language code."}
-    )
-    use_chat_template: bool = field(
-        default=True, metadata={"help": "Format prompts with tokenizer.apply_chat_template()."}
-    )
-    chat_template_path: str | None = field(
-        default=None,
-        metadata={
-            "help": "Optional local Jinja chat template path used when --use_chat_template is true."
-        },
-    )
-    extra_languages: list[str] = field(
-        default_factory=lambda: ["mos_Latn=Mossi"],
-        metadata={
-            "help": "Languages missing from the chat template, as CODE=Name entries. They are "
-            "added to the template at load time."
-        },
-    )
-    max_eval_samples: int | None = field(
-        default=None, metadata={"help": "Limit evaluation to the first N examples."}
-    )
-
-
-@dataclass
-class EvaluationArguments:
-    model: str | None = field(
-        default=None,
-        metadata={
-            "help": "Model to generate with on Modal: an HF repo id or a /models/... path in the "
-            "translategemma-models volume. Defaults to --model_name."
-        },
-    )
-    adapter: str | None = field(
-        default=None,
-        metadata={"help": "Optional LoRA adapter on Modal: an HF repo id or a /models/... path."},
-    )
-    max_new_tokens: int = field(default=128, metadata={"help": "Maximum generated tokens."})
-    temperature: float = field(
-        default=0.0, metadata={"help": "Sampling temperature. 0 uses greedy decoding."}
-    )
-    top_p: float = field(default=0.9, metadata={"help": "Top-p value when sampling."})
-    top_k: int = field(default=50, metadata={"help": "Top-k value when sampling."})
-    repetition_penalty: float = field(
-        default=1.0,
-        metadata={"help": "Penalty for repeated tokens during generation. 1.0 disables it."},
-    )
-    output_predictions_path: str | None = field(
-        default=None, metadata={"help": "Optional JSONL path for sources, references, predictions."}
-    )
-
-
-def parse_args() -> tuple[ModelArguments, EvaluationDataArguments, EvaluationArguments]:
-    from transformers import HfArgumentParser
-
-    parser = HfArgumentParser(
-        (ModelArguments, EvaluationDataArguments, EvaluationArguments)
-    )
-    return parser.parse_args_into_dataclasses()  # ty:ignore[invalid-return-type]
-
-
-def load_dataset_split(data_args: EvaluationDataArguments) -> Any:
-    from datasets import load_dataset
-
-    dataset = load_dataset(
-        data_args.dataset_name, data_files=data_args.data_files, split=data_args.dataset_split
-    )
-    if data_args.max_eval_samples is not None:
-        dataset = dataset.select(range(min(data_args.max_eval_samples, len(dataset))))
-    return dataset
-
-
-def load_tokenizer(model_args: ModelArguments) -> Any:
+def load_tokenizer(name: str) -> Any:
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
-    if hasattr(tokenizer, "model_max_length"):
-        tokenizer.model_max_length = model_args.max_seq_length
+    tokenizer = AutoTokenizer.from_pretrained(name)
     if hasattr(tokenizer, "add_bos_token"):
         tokenizer.add_bos_token = False
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "left"
-    return tokenizer
-
-
-def maybe_apply_chat_template(tokenizer: Any, data_args: EvaluationDataArguments) -> Any:
-    if not data_args.use_chat_template:
-        return tokenizer
-
-    chat_template = tokenizer.chat_template
-    if data_args.chat_template_path is not None:
-        path = Path(data_args.chat_template_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Chat template file does not exist: {path}")
-        chat_template = path.read_text(encoding="utf-8")
-
-    tokenizer.chat_template = add_languages_to_chat_template(
-        chat_template, parse_extra_languages(data_args.extra_languages)
-    )
     return tokenizer
 
 
 def tokenize_prompts(
-    tokenizer: Any,
-    sources: list[str],
-    model_args: ModelArguments,
-    data_args: EvaluationDataArguments,
+    tokenizer: Any, rows: dict[str, list[Any]], args: argparse.Namespace
 ) -> list[list[int]]:
     prompts = [
         format_single_for_prediction(
             source_text=source,
-            source_lang_code=data_args.source_lang_code,
-            target_lang_code=data_args.target_lang_code,
+            source_lang_code=source_code,
+            target_lang_code=target_code,
             tokenizer=tokenizer,
-            use_chat_template=data_args.use_chat_template,
+            use_chat_template=args.use_chat_template,
         )
-        for source in sources
+        for source, source_code, target_code in zip(
+            rows[SOURCE_COLUMN], rows["source_lang_code"], rows["target_lang_code"], strict=True
+        )
     ]
     # Token ids are passed as-is, so vLLM neither re-renders nor adds a second <bos>.
     return tokenizer(
         prompts,
         truncation=True,
-        max_length=model_args.max_seq_length,
+        max_length=args.max_prompt_tokens,
         add_special_tokens=False,
     )["input_ids"]
 
 
-def build_sampling(eval_args: EvaluationArguments, stop_token_ids: list[int]) -> dict[str, Any]:
+def build_sampling(args: argparse.Namespace, stop_token_ids: list[int]) -> dict[str, Any]:
     sampling: dict[str, Any] = {
-        "max_tokens": eval_args.max_new_tokens,
+        "max_tokens": args.max_new_tokens,
         "stop_token_ids": stop_token_ids,
-        "repetition_penalty": eval_args.repetition_penalty,
+        "repetition_penalty": args.repetition_penalty,
         "temperature": 0.0,  # greedy
     }
-    if eval_args.temperature > 0:
-        sampling.update(
-            {
-                "temperature": eval_args.temperature,
-                "top_p": eval_args.top_p,
-                "top_k": eval_args.top_k,
-            }
-        )
+    if args.temperature > 0:
+        sampling.update({"temperature": args.temperature, "top_p": args.top_p, "top_k": args.top_k})
     return sampling
 
 
 def generate_predictions(
-    prompt_token_ids: list[list[int]],
-    stop_token_ids: list[int],
-    model_args: ModelArguments,
-    eval_args: EvaluationArguments,
+    prompt_token_ids: list[list[int]], stop_token_ids: list[int], args: argparse.Namespace
 ) -> list[str]:
     import modal
 
@@ -197,70 +139,59 @@ def generate_predictions(
 
     with modal.enable_output(), app.run():
         predictions = generate.remote(
-            model=eval_args.model or model_args.model_name,
-            adapter=eval_args.adapter,
+            model=args.model,
+            adapter=args.adapter,
             prompt_token_ids=prompt_token_ids,
-            sampling=build_sampling(eval_args, stop_token_ids),
-            max_model_len=model_args.max_seq_length + eval_args.max_new_tokens,
+            sampling=build_sampling(args, stop_token_ids),
+            max_model_len=args.max_prompt_tokens + args.max_new_tokens,
         )
     return [prediction.strip() for prediction in predictions]
 
 
-def compute_metrics(predictions: list[str], references: list[str]) -> dict[str, float]:
-    return {
-        "bleu": BLEU().corpus_score(predictions, [references]).score,
-        "chrfpp": CHRF(word_order=2).corpus_score(predictions, [references]).score,
-    }
-
-
 def write_predictions(
-    path: str | None,
-    sources: list[str],
-    references: list[str],
+    path: Path,
+    rows: dict[str, list[Any]],
     predictions: list[str],
+    row_directions: list[str],
 ) -> None:
-    if path is None:
-        return
-
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as output_file:
-        for source, reference, prediction in zip(sources, references, predictions, strict=True):
-            output_file.write(
-                json.dumps(
-                    {
-                        "source": source,
-                        "reference": reference,
-                        "prediction": prediction,
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as output_file:
+        for direction, source, reference, prediction in zip(
+            row_directions, rows[SOURCE_COLUMN], rows[TARGET_COLUMN], predictions, strict=True
+        ):
+            record = {
+                "direction": direction,
+                "source": source,
+                "reference": reference,
+                "prediction": prediction,
+            }
+            output_file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     from dotenv import load_dotenv
 
     load_dotenv()
-    model_args, data_args, eval_args = parse_args()
-    dataset = load_dataset_split(data_args)
-    tokenizer = load_tokenizer(model_args)
-    maybe_apply_chat_template(tokenizer, data_args)
-    sources = dataset[data_args.source_field]
-    references = dataset[data_args.target_field]
-    prompt_token_ids = tokenize_prompts(tokenizer, sources, model_args, data_args)
+    args = parse_args(argv)
+    dataset = load_eval_set(args.data, args.split, args.direction)
+    if args.max_samples is not None:
+        dataset = dataset.select(range(min(args.max_samples, len(dataset))))
+    rows = dataset[:]
+    row_directions = directions(rows)
+
+    tokenizer = load_tokenizer(args.tokenizer)
+    maybe_apply_chat_template(tokenizer, args)
+    prompt_token_ids = tokenize_prompts(tokenizer, rows, args)
     stop_token_ids = get_eos_token_ids(tokenizer)
     if isinstance(stop_token_ids, int):
         stop_token_ids = [stop_token_ids]
-    predictions = generate_predictions(
-        prompt_token_ids, stop_token_ids or [], model_args, eval_args
-    )
-    scores = compute_metrics(predictions, references)
-    write_predictions(eval_args.output_predictions_path, sources, references, predictions)
+    predictions = generate_predictions(prompt_token_ids, stop_token_ids or [], args)
 
-    print(f"BLEU: {scores['bleu']:.2f}")
-    print(f"chrF++: {scores['chrfpp']:.2f}")
+    if args.output is not None:
+        write_predictions(args.output, rows, predictions, row_directions)
+    scores = metrics_by_direction(row_directions, predictions, rows[TARGET_COLUMN])
+    for direction, metrics in scores.items():
+        print(f"{direction}: BLEU {metrics['bleu']:.2f}, chrF++ {metrics['chrfpp']:.2f}")
     print(f"examples: {len(predictions)}")
 
 

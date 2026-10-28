@@ -6,6 +6,12 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from translategemma_finetune.data import (
+    DEFAULT_MIX_DIR,
+    SOURCE_COLUMN,
+    TARGET_COLUMN,
+    load_translation_split,
+)
 from translategemma_finetune.templates import (
     add_languages_to_chat_template,
     format_for_training,
@@ -15,7 +21,6 @@ from translategemma_finetune.templates import (
 from transformers import TrainerCallback, TrainingArguments as HFTrainingArguments
 
 DEFAULT_MODEL = "google/translategemma-4b-it"
-DEFAULT_DATASET = "madoss/fr-mos-final-data"
 DEFAULT_OUTPUT_DIR = "outputs/translategemma-4b-it-fr-mos-lora"
 DEFAULT_MERGED_DIR = "translategemma-4b-it_16bit"
 DEFAULT_TARGET_MODULES = (
@@ -45,29 +50,24 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    dataset_name: str = field(
-        default=DEFAULT_DATASET, metadata={"help": "Hugging Face dataset name."}
+    data: str = field(
+        default=DEFAULT_MIX_DIR,
+        metadata={
+            "help": "A mix directory with train/validation/test.jsonl (see `translategemma mix`) "
+            "or a Hub dataset with these splits and french/moore columns."
+        },
     )
-    dataset_split: str = field(default="train", metadata={"help": "Dataset split to train on."})
-    validation_split: str | None = field(
-        default="validation",
-        metadata={"help": "Dataset split to use for validation. Pass an empty string to disable."},
+    validation: bool = field(
+        default=True, metadata={"help": "Evaluate on the validation split during training."}
     )
-    test_split: str | None = field(
-        default=None,
-        metadata={"help": "Dataset split to evaluate after training. Pass e.g. --test_split test."},
-    )
-    source_field: str = field(
-        default="french", metadata={"help": "Dataset column containing source text."}
-    )
-    target_field: str = field(
-        default="moore", metadata={"help": "Dataset column containing target text."}
+    test: bool = field(
+        default=False, metadata={"help": "Score the test split after training, per direction."}
     )
     source_lang_code: str = field(
-        default="fr", metadata={"help": "TranslateGemma source language code."}
+        default="fr", metadata={"help": "Source language code of --test-prompt."}
     )
     target_lang_code: str = field(
-        default="mos_Latn", metadata={"help": "TranslateGemma target language code."}
+        default="mos_Latn", metadata={"help": "Target language code of --test-prompt."}
     )
     use_chat_template: bool = field(
         default=True, metadata={"help": "Format examples with processor.apply_chat_template()."}
@@ -161,17 +161,36 @@ class TrainingArguments(HFTrainingArguments):
     )
 
 
-def parse_args() -> tuple[ModelArguments, DataArguments, TrainingArguments]:
+def parse_args(
+    argv: list[str] | None = None,
+) -> tuple[ModelArguments, DataArguments, TrainingArguments]:
     from transformers import HfArgumentParser
 
-    parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))  # ty:ignore[invalid-argument-type]
-    return parser.parse_args_into_dataclasses()  # ty:ignore[invalid-return-type]
+    parser = HfArgumentParser(
+        (ModelArguments, DataArguments, TrainingArguments),  # ty:ignore[invalid-argument-type]
+        prog="translategemma train",
+    )
+    return parser.parse_args_into_dataclasses(argv)  # ty:ignore[invalid-return-type]
 
 
-def load_dataset_split(dataset_name: str, split: str) -> Any:
-    from datasets import load_dataset
+def load_split(data_args: DataArguments, split: str) -> Any | None:
+    if split == "validation" and not data_args.validation:
+        return None
+    if split == "test" and not data_args.test:
+        return None
+    dataset = load_translation_split(data_args.data, split)
+    if dataset is None and split == "train":
+        raise FileNotFoundError(
+            f"No training data in {data_args.data}. Build the mix with `translategemma mix`."
+        )
+    return dataset
 
-    return load_dataset(dataset_name, split=split)
+
+def directions(rows: dict[str, list[str]]) -> list[str]:
+    return [
+        f"{source}->{target}"
+        for source, target in zip(rows["source_lang_code"], rows["target_lang_code"], strict=True)
+    ]
 
 
 def format_training_dataset(dataset: Any, data_args: DataArguments, processor: Any) -> Any:
@@ -179,8 +198,8 @@ def format_training_dataset(dataset: Any, data_args: DataArguments, processor: A
         format_for_training,
         source_lang_code=data_args.source_lang_code,
         target_lang_code=data_args.target_lang_code,
-        source_field=data_args.source_field,
-        target_field=data_args.target_field,
+        source_field=SOURCE_COLUMN,
+        target_field=TARGET_COLUMN,
         tokenizer=processor,
         use_chat_template=data_args.use_chat_template,
     )
@@ -328,13 +347,17 @@ class WandbPredictionCallback(TrainerCallback):
         sample_count = max(data_args.wandb_eval_samples, 0)
         if raw_eval_dataset is None or sample_count == 0:
             return
-        for index in range(min(sample_count, len(raw_eval_dataset))):
+        # Spread the samples over the dataset so mixed-direction files show every direction.
+        step = max(len(raw_eval_dataset) // sample_count, 1)
+        for index in range(0, len(raw_eval_dataset), step)[:sample_count]:
             row = raw_eval_dataset[index]
             self.samples.append(
                 {
                     "index": index,
-                    "source": row[data_args.source_field],
-                    "reference": row[data_args.target_field],
+                    "source": row[SOURCE_COLUMN],
+                    "reference": row[TARGET_COLUMN],
+                    "source_lang_code": row["source_lang_code"],
+                    "target_lang_code": row["target_lang_code"],
                 }
             )
 
@@ -360,8 +383,8 @@ class WandbPredictionCallback(TrainerCallback):
         prompts = [
             format_single_for_prediction(
                 source_text=sample["source"],
-                source_lang_code=self.data_args.source_lang_code,
-                target_lang_code=self.data_args.target_lang_code,
+                source_lang_code=sample["source_lang_code"],
+                target_lang_code=sample["target_lang_code"],
                 tokenizer=self.processor,
                 use_chat_template=self.data_args.use_chat_template,
             )
@@ -400,11 +423,14 @@ class WandbPredictionCallback(TrainerCallback):
             prediction.strip()
             for prediction in decoder(generated_tokens, skip_special_tokens=True)
         ]
-        table = wandb.Table(columns=["step", "index", "source", "reference", "prediction"])
+        table = wandb.Table(
+            columns=["step", "index", "direction", "source", "reference", "prediction"]
+        )
         for sample, prediction in zip(self.samples, predictions, strict=True):
             table.add_data(
                 state.global_step,
                 sample["index"],
+                f"{sample['source_lang_code']}->{sample['target_lang_code']}",
                 sample["source"],
                 sample["reference"],
                 prediction,
@@ -501,17 +527,20 @@ def generate_predictions(
     model.eval()
     with torch.no_grad():
         for batch in iter_batches(raw_dataset, data_args.test_batch_size):
-            batch_sources = batch[data_args.source_field]
-            batch_references = batch[data_args.target_field]
+            batch_sources = batch[SOURCE_COLUMN]
+            batch_references = batch[TARGET_COLUMN]
+            source_codes, target_codes = batch["source_lang_code"], batch["target_lang_code"]
             prompts = [
                 format_single_for_prediction(
                     source_text=source,
-                    source_lang_code=data_args.source_lang_code,
-                    target_lang_code=data_args.target_lang_code,
+                    source_lang_code=source_code,
+                    target_lang_code=target_code,
                     tokenizer=processor,
                     use_chat_template=data_args.use_chat_template,
                 )
-                for source in batch_sources
+                for source, source_code, target_code in zip(
+                    batch_sources, source_codes, target_codes, strict=True
+                )
             ]
             inputs = processor(
                 text=prompts,
@@ -548,11 +577,30 @@ def compute_translation_metrics(predictions: list[str], references: list[str]) -
     }
 
 
-def evaluate_test_set(model: Any, processor: Any, data_args: DataArguments) -> None:
-    if not data_args.test_split:
-        return
+def metrics_by_direction(
+    row_directions: list[str], predictions: list[str], references: list[str]
+) -> dict[str, dict[str, float]]:
+    """Scores for each direction, plus "all" when there is more than one."""
+    groups: dict[str, tuple[list[str], list[str]]] = {}
+    for direction, prediction, reference in zip(
+        row_directions, predictions, references, strict=True
+    ):
+        group = groups.setdefault(direction, ([], []))
+        group[0].append(prediction)
+        group[1].append(reference)
+    scores = {
+        direction: compute_translation_metrics(*group)
+        for direction, group in sorted(groups.items())
+    }
+    if len(groups) > 1:
+        scores["all"] = compute_translation_metrics(predictions, references)
+    return scores
 
-    raw_test_dataset = load_dataset_split(data_args.dataset_name, data_args.test_split)
+
+def evaluate_test_set(model: Any, processor: Any, data_args: DataArguments) -> None:
+    raw_test_dataset = load_split(data_args, "test")
+    if raw_test_dataset is None:
+        return
     if data_args.max_test_samples is not None:
         raw_test_dataset = raw_test_dataset.select(
             range(min(data_args.max_test_samples, len(raw_test_dataset)))
@@ -564,9 +612,10 @@ def evaluate_test_set(model: Any, processor: Any, data_args: DataArguments) -> N
         raw_test_dataset,
         data_args,
     )
-    metrics = compute_translation_metrics(predictions, references)
-    print(f"test BLEU: {metrics['bleu']:.2f}")
-    print(f"test chrF++: {metrics['chrfpp']:.2f}")
+    row_directions = directions(raw_test_dataset[:])
+    scores = metrics_by_direction(row_directions, predictions, references)
+    for direction, metrics in scores.items():
+        print(f"test {direction}: BLEU {metrics['bleu']:.2f}, chrF++ {metrics['chrfpp']:.2f}")
     print(f"test examples: {len(predictions)}")
 
     try:
@@ -576,19 +625,18 @@ def evaluate_test_set(model: Any, processor: Any, data_args: DataArguments) -> N
     if wandb.run is None:
         return
 
-    table = wandb.Table(columns=["index", "source", "reference", "prediction"])
-    for index, (source, reference, prediction) in enumerate(
-        zip(sources, references, predictions, strict=True)
+    table = wandb.Table(columns=["index", "direction", "source", "reference", "prediction"])
+    for index, (direction, source, reference, prediction) in enumerate(
+        zip(row_directions, sources, references, predictions, strict=True)
     ):
-        table.add_data(index, source, reference, prediction)
-    wandb.log(
-        {
-            "test/bleu": metrics["bleu"],
-            "test/chrfpp": metrics["chrfpp"],
-            "test/examples": len(predictions),
-            "test/predictions": table,
-        }
-    )
+        table.add_data(index, direction, source, reference, prediction)
+    logged: dict[str, Any] = {"test/examples": len(predictions), "test/predictions": table}
+    for direction, metrics in scores.items():
+        # Keep the single-direction keys as test/bleu and test/chrfpp.
+        prefix = "test" if len(scores) == 1 or direction == "all" else f"test/{direction}"
+        logged[f"{prefix}/bleu"] = metrics["bleu"]
+        logged[f"{prefix}/chrfpp"] = metrics["chrfpp"]
+    wandb.log(logged)
 
 
 def generate_sample(model: Any, processor: Any, data_args: DataArguments) -> None:
@@ -636,14 +684,14 @@ def save_outputs(model: Any, processor: Any, training_args: TrainingArguments) -
         processor.push_to_hub(training_args.hub_model_id)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     from dotenv import load_dotenv
 
     load_dotenv()
-    model_args, data_args, training_args = parse_args()
+    model_args, data_args, training_args = parse_args(argv)
     if training_args.project:
         os.environ["WANDB_PROJECT"] = training_args.project
-    raw_dataset = load_dataset_split(data_args.dataset_name, data_args.dataset_split)
+    raw_dataset = load_split(data_args, "train")
 
     if data_args.preview_sample:
         processor = load_processor(model_args)
@@ -657,11 +705,7 @@ def main() -> None:
     maybe_apply_chat_template(processor, data_args)
     model = load_model(model_args, training_args)
     dataset = format_training_dataset(raw_dataset, data_args, processor)
-    raw_eval_dataset = (
-        load_dataset_split(data_args.dataset_name, data_args.validation_split)
-        if data_args.validation_split
-        else None
-    )
+    raw_eval_dataset = load_split(data_args, "validation")
     eval_dataset = (
         format_training_dataset(raw_eval_dataset, data_args, processor)
         if raw_eval_dataset is not None

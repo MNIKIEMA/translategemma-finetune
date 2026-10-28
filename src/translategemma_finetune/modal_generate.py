@@ -1,4 +1,4 @@
-"""Offline vLLM generation on Modal, used by ``translategemma-evaluate``.
+"""Offline vLLM generation on Modal, used by ``translategemma eval``.
 
 The prompts are rendered and tokenized locally and passed as token ids; the function returns
 the generated texts in the same order. Models and adapters are HF repo ids or paths in the

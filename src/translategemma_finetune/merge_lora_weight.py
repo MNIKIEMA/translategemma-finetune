@@ -38,11 +38,11 @@ class MergeArguments:
     )
 
 
-def parse_args() -> MergeArguments:
+def parse_args(argv: list[str] | None = None) -> MergeArguments:
     from transformers import HfArgumentParser
 
-    parser = HfArgumentParser(MergeArguments)
-    return parser.parse_args_into_dataclasses()[0]  # ty:ignore[invalid-return-type]
+    parser = HfArgumentParser(MergeArguments, prog="translategemma merge")
+    return parser.parse_args_into_dataclasses(argv)[0]  # ty:ignore[invalid-return-type]
 
 
 def get_torch_dtype(dtype: DTypeName) -> Any:
@@ -93,11 +93,11 @@ def save_merged_model(model: Any, processor: Any, args: MergeArguments) -> None:
     processor.save_pretrained(output_path)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     from dotenv import load_dotenv
 
     load_dotenv()
-    args = parse_args()
+    args = parse_args(argv)
     processor = load_processor(args)
     merged_model = load_merged_model(args)
     save_merged_model(merged_model, processor, args)

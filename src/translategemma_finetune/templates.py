@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 import json
 import re
@@ -37,6 +37,22 @@ def add_languages_to_chat_template(chat_template: str, languages: dict[str, str]
         if f"\n    {json.dumps(code)}:" not in match.group()
     )
     return chat_template[: match.end()] + entries + chat_template[match.end() :]
+
+
+def row_lang_codes(
+    examples: Mapping[str, list[Any]],
+    count: int,
+    source_lang_code: str,
+    target_lang_code: str,
+) -> tuple[list[str], list[str]]:
+    """Per-row codes from ``source_lang_code``/``target_lang_code`` columns, else the defaults.
+
+    Mixed-direction data (see ``mix_data.py``) stores the direction of every row.
+    """
+    return (
+        list(examples.get("source_lang_code") or [source_lang_code] * count),
+        list(examples.get("target_lang_code") or [target_lang_code] * count),
+    )
 
 
 def raw_prompt_prefix(tokenizer: PreTrainedTokenizer | None) -> str:
@@ -155,13 +171,19 @@ def format_for_training(
     if use_chat_template and tokenizer is None:
         raise ValueError("tokenizer must be provided when use_chat_template=True")
 
+    sources, targets = examples[source_field], examples[target_field]
+    source_codes, target_codes = row_lang_codes(
+        examples, len(sources), source_lang_code, target_lang_code
+    )
     texts = []
-    for source, target in zip(examples[source_field], examples[target_field], strict=True):
+    for source, target, row_source_code, row_target_code in zip(
+        sources, targets, source_codes, target_codes, strict=True
+    ):
         messages = create_chat_messages(
             source,
             target_text=target,
-            source_lang_code=source_lang_code,
-            target_lang_code=target_lang_code,
+            source_lang_code=row_source_code,
+            target_lang_code=row_target_code,
         )
 
         if use_chat_template and tokenizer is not None:
