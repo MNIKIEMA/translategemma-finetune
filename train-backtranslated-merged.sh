@@ -14,7 +14,6 @@ fi
 "${RUN[@]}" \
   --dataset_name madoss/fr-mos-final-data-backtranslated-merged \
   --use_chat_template true \
-  --chat_template_path chat_template.jinja \
   --lora_r 128 \
   --lora_alpha 256 \
   --fp16 false \

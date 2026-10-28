@@ -8,7 +8,11 @@ from tqdm import tqdm
 from sacrebleu.metrics import BLEU, CHRF
 
 from translategemma_finetune.finetune import DEFAULT_OUTPUT_DIR, ModelArguments, get_eos_token_ids
-from translategemma_finetune.templates import format_single_for_prediction
+from translategemma_finetune.templates import (
+    add_languages_to_chat_template,
+    format_single_for_prediction,
+    parse_extra_languages,
+)
 
 
 DEFAULT_DATASET = "madoss/fr-mos-final-data"
@@ -39,6 +43,13 @@ class EvaluationDataArguments:
         default=None,
         metadata={
             "help": "Optional local Jinja chat template path used when --use_chat_template is true."
+        },
+    )
+    extra_languages: list[str] = field(
+        default_factory=lambda: ["mos_Latn=Mossi"],
+        metadata={
+            "help": "Languages missing from the chat template, as CODE=Name entries. They are "
+            "added to the template at load time."
         },
     )
     max_eval_samples: int | None = field(
@@ -88,10 +99,18 @@ def load_dataset_split(data_args: EvaluationDataArguments) -> Any:
     return dataset
 
 
-def load_tokenizer(model_args: ModelArguments) -> Any:
+def load_tokenizer(model_args: ModelArguments, eval_args: EvaluationArguments) -> Any:
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
+    # The adapter saves the tokenizer with the chat template used during training.
+    tokenizer = None
+    if eval_args.adapter_path:
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(eval_args.adapter_path)
+        except OSError:
+            pass
+    if tokenizer is None:
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
     if hasattr(tokenizer, "model_max_length"):
         tokenizer.model_max_length = model_args.max_seq_length
     if hasattr(tokenizer, "add_bos_token"):
@@ -103,14 +122,19 @@ def load_tokenizer(model_args: ModelArguments) -> Any:
 
 
 def maybe_apply_chat_template(tokenizer: Any, data_args: EvaluationDataArguments) -> Any:
-    if not data_args.use_chat_template or data_args.chat_template_path is None:
+    if not data_args.use_chat_template:
         return tokenizer
 
-    path = Path(data_args.chat_template_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Chat template file does not exist: {path}")
+    chat_template = tokenizer.chat_template
+    if data_args.chat_template_path is not None:
+        path = Path(data_args.chat_template_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Chat template file does not exist: {path}")
+        chat_template = path.read_text(encoding="utf-8")
 
-    tokenizer.chat_template = path.read_text(encoding="utf-8")
+    tokenizer.chat_template = add_languages_to_chat_template(
+        chat_template, parse_extra_languages(data_args.extra_languages)
+    )
     return tokenizer
 
 
@@ -253,7 +277,7 @@ def main() -> None:
     load_dotenv()
     model_args, data_args, eval_args = parse_args()
     dataset = load_dataset_split(data_args)
-    tokenizer = load_tokenizer(model_args)
+    tokenizer = load_tokenizer(model_args, eval_args)
     maybe_apply_chat_template(tokenizer, data_args)
     model = load_model(model_args, eval_args)
     sources, references, predictions = generate_predictions(

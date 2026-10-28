@@ -6,7 +6,12 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from translategemma_finetune.templates import format_for_training, format_single_for_prediction
+from translategemma_finetune.templates import (
+    add_languages_to_chat_template,
+    format_for_training,
+    format_single_for_prediction,
+    parse_extra_languages,
+)
 from transformers import TrainerCallback, TrainingArguments as HFTrainingArguments
 
 DEFAULT_MODEL = "google/translategemma-4b-it"
@@ -71,6 +76,13 @@ class DataArguments:
         default=None,
         metadata={
             "help": "Optional local Jinja chat template path used when --use_chat_template is true."
+        },
+    )
+    extra_languages: list[str] = field(
+        default_factory=lambda: ["mos_Latn=Mossi"],
+        metadata={
+            "help": "Languages missing from the chat template, as CODE=Name entries. They are "
+            "added to the template at load time and saved with the model."
         },
     )
     preview_sample: bool = field(
@@ -190,14 +202,19 @@ def load_processor(model_args: ModelArguments) -> Any:
 
 
 def maybe_apply_chat_template(processor: Any, data_args: DataArguments) -> Any:
-    if not data_args.use_chat_template or data_args.chat_template_path is None:
+    if not data_args.use_chat_template:
         return processor
 
-    path = Path(data_args.chat_template_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Chat template file does not exist: {path}")
+    chat_template = processor.chat_template
+    if data_args.chat_template_path is not None:
+        path = Path(data_args.chat_template_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Chat template file does not exist: {path}")
+        chat_template = path.read_text(encoding="utf-8")
 
-    processor.chat_template = path.read_text(encoding="utf-8")
+    processor.chat_template = add_languages_to_chat_template(
+        chat_template, parse_extra_languages(data_args.extra_languages)
+    )
     tokenizer = getattr(processor, "tokenizer", None)
     if tokenizer is not None:
         tokenizer.chat_template = processor.chat_template

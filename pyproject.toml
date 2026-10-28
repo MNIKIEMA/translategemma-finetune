@@ -23,7 +23,6 @@ dependencies = [
 translategemma-finetune = "translategemma_finetune:main"
 translategemma-evaluate = "translategemma_finetune.evaluate:main"
 translategemma-merge-lora = "translategemma_finetune.merge_lora_weight:main"
-translategemma-update-languages = "translategemma_finetune.update_languages:main"
 
 [build-system]
 requires = ["uv_build>=0.11.11,<0.12.0"]

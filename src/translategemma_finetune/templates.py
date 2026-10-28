@@ -1,6 +1,42 @@
+from collections.abc import Iterable
 from typing import Any
 import json
+import re
 from transformers import PreTrainedTokenizer
+
+LANGUAGES_BLOCK_END_RE = re.compile(r"\A\{%- set languages = \{\n.*?(?=\n\}\n-%\})", re.DOTALL)
+
+
+def parse_extra_languages(values: Iterable[str]) -> dict[str, str]:
+    """Parse ``CODE=Name`` entries, normalizing codes the way the chat template does."""
+    languages: dict[str, str] = {}
+    for value in values:
+        code, separator, name = value.partition("=")
+        code = code.strip().replace("_", "-")
+        name = name.strip()
+        if not separator or not code or not name:
+            raise ValueError(f"Expected CODE=Name, got {value!r}")
+        languages[code] = name
+    return languages
+
+
+def add_languages_to_chat_template(chat_template: str, languages: dict[str, str]) -> str:
+    """Append languages to the ``languages`` map at the top of the TranslateGemma template.
+
+    Codes already in the map are kept as they are, so applying this twice is a no-op.
+    """
+    match = LANGUAGES_BLOCK_END_RE.match(chat_template)
+    if not match:
+        if not languages:
+            return chat_template
+        raise ValueError("Could not find the `languages` block in the chat template.")
+
+    entries = "".join(
+        f"\n    {json.dumps(code)}: {json.dumps(name, ensure_ascii=False)},"
+        for code, name in languages.items()
+        if f"\n    {json.dumps(code)}:" not in match.group()
+    )
+    return chat_template[: match.end()] + entries + chat_template[match.end() :]
 
 
 def create_chat_messages(

@@ -13,7 +13,6 @@ fi
 
 "${RUN[@]}" \
   --use_chat_template true \
-  --chat_template_path chat_template.jinja \
   --lora_r 128 \
   --lora_alpha 256 \
   --max_seq_length 512 \

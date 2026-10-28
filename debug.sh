@@ -13,7 +13,6 @@ fi
 
 "${RUN[@]}" \
   --use_chat_template true \
-  --chat_template_path chat_template.jinja \
   --fp16 true \
   --output_dir outputs/debug-translategemma-4b-it-fr-mos-lora \
   --max_steps 20 \

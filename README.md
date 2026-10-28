@@ -55,24 +55,25 @@ Chat templates are applied by default with the tokenizer's bundled template:
 uv run translategemma-finetune --use_chat_template true
 ```
 
-To add a language that is not already in
-`src/translategemma_finetune/languages.json`, generate a local chat template
-from the bundled `translategemma_template.jinja`:
-
-```bash
-uv run translategemma-update-languages "mos_Latn=Mossi"
-```
-
-This updates `src/translategemma_finetune/languages.json` and writes
-`chat_template.jinja`. Use the generated template during training:
+TranslateGemma's chat template only knows the languages in its `languages` map.
+Languages missing from it are passed as `CODE=Name` entries with
+`--extra_languages` and added to the template when the tokenizer is loaded.
+Nothing in the repository is modified, and the updated template is saved with
+the adapter or merged model. The default registers Mooré:
 
 ```bash
 uv run translategemma-finetune \
-  --use_chat_template true \
-  --chat_template_path chat_template.jinja
+  --target_lang_code mos_Latn \
+  --extra_languages mos_Latn=Mossi
 ```
 
-If `--chat_template_path` is omitted, the default tokenizer template is used.
+Pass several entries to add more languages, e.g.
+`--extra_languages mos_Latn=Mossi dyu_Latn=Dyula`. `translategemma-evaluate`
+loads the tokenizer saved with the adapter, so it reuses the training template;
+it accepts `--extra_languages` too when evaluating a base or merged model.
+
+To use a different template altogether, pass `--chat_template_path <path>`; the
+extra languages are added to that template too.
 
 By default the script saves the LoRA adapter and tokenizer to `output_dir`.
 Pass `--save_merged_path <path>` to also save a merged 16-bit model.
@@ -93,7 +94,6 @@ uv run translategemma-evaluate \
   --dataset_split test \
   --source_lang_code fr \
   --target_lang_code mos_Latn \
-  --chat_template_path chat_template.jinja \
   --output_predictions_path outputs/predictions.jsonl
 ```
 
@@ -110,8 +110,7 @@ uv run translategemma-evaluate \
   --adapter_path "" \
   --dataset_split test \
   --source_lang_code fr \
-  --target_lang_code mos_Latn \
-  --chat_template_path chat_template.jinja
+  --target_lang_code mos_Latn
 ```
 
 ## Development
