@@ -48,6 +48,15 @@ Files in `data/fra-mos-mix/` (gitignored):
 - `validation.jsonl`: 500 moore-web validation pairs per direction (1,000 rows).
 - `test.jsonl`: full moore-web test in both directions (2,573 each, 5,146 rows).
 
+Published (private) as
+[`madoss/translategemma-fra-mos-mix`](https://huggingface.co/datasets/madoss/translategemma-fra-mos-mix)
+at revision `ca1409b5870bc661782ce17dcd200c0796ce9b0b`, identical to the local
+files. Source revisions used (all last modified before the build):
+moore-web-parallel `d5335538`, nllb-burkina-parallel `b9d07043`, flores_plus
+`1147e2dc`, bouquet `dac03947`. Train with
+`--data madoss/translategemma-fra-mos-mix` to reproduce a run without
+rebuilding.
+
 ## Notes / decisions
 
 - Training reads each row's direction from `source_lang_code`/`target_lang_code`

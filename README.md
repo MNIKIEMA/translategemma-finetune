@@ -49,6 +49,11 @@ Sentences from moore-web validation/test, FLORES+ dev/devtest and BOUQuET
 dev/test are removed from training, and duplicates are dropped. FLORES+ is
 gated: accept its terms on the Hub and put `HF_TOKEN` in `.env`.
 
+The mix used for training is published (private) as
+[`madoss/translategemma-fra-mos-mix`](https://huggingface.co/datasets/madoss/translategemma-fra-mos-mix);
+pass `--data madoss/translategemma-fra-mos-mix` to train on it without
+rebuilding. Its card lists the source dataset revisions.
+
 Validation is 500 moore-web validation rows per direction; test is the full
 moore-web test split in both directions. Every row stores its direction in
 `source_lang_code`/`target_lang_code`.
