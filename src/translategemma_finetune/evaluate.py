@@ -30,7 +30,7 @@ class EvaluationDataArguments:
         default="fr", metadata={"help": "TranslateGemma source language code."}
     )
     target_lang_code: str = field(
-        default="mos", metadata={"help": "TranslateGemma target language code."}
+        default="mos_Latn", metadata={"help": "TranslateGemma target language code."}
     )
     use_chat_template: bool = field(
         default=True, metadata={"help": "Format prompts with tokenizer.apply_chat_template()."}

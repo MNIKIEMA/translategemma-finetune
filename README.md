@@ -45,7 +45,7 @@ uv run translategemma-finetune \
   --source_field french \
   --target_field moore \
   --source_lang_code fr \
-  --target_lang_code mos \
+  --target_lang_code mos_Latn \
   --output_dir outputs/translategemma-4b-it-fr-mos-lora
 ```
 
@@ -60,7 +60,7 @@ To add a language that is not already in
 from the bundled `translategemma_template.jinja`:
 
 ```bash
-uv run translategemma-update-languages "mos=Mooré"
+uv run translategemma-update-languages "mos_Latn=Mossi"
 ```
 
 This updates `src/translategemma_finetune/languages.json` and writes
@@ -92,7 +92,7 @@ uv run translategemma-evaluate \
   --adapter_path outputs/translategemma-4b-it-fr-mos-lora \
   --dataset_split test \
   --source_lang_code fr \
-  --target_lang_code mos \
+  --target_lang_code mos_Latn \
   --chat_template_path chat_template.jinja \
   --output_predictions_path outputs/predictions.jsonl
 ```
@@ -110,7 +110,7 @@ uv run translategemma-evaluate \
   --adapter_path "" \
   --dataset_split test \
   --source_lang_code fr \
-  --target_lang_code mos \
+  --target_lang_code mos_Latn \
   --chat_template_path chat_template.jinja
 ```
 

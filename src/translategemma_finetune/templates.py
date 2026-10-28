@@ -53,7 +53,7 @@ def create_chat_messages(
 def format_for_prediction(
     examples: dict[str, list[str]],
     source_lang_code: str = "fr",
-    target_lang_code: str = "mos",
+    target_lang_code: str = "mos_Latn",
     source_field: str = "french",
     tokenizer: PreTrainedTokenizer | None = None,
     use_chat_template: bool = False,
@@ -74,7 +74,7 @@ def format_for_prediction(
 def format_single_for_prediction(
     source_text: str,
     source_lang_code: str = "fr",
-    target_lang_code: str = "mos",
+    target_lang_code: str = "mos_Latn",
     tokenizer: PreTrainedTokenizer | None = None,
     use_chat_template: bool = False,
 ) -> str:
@@ -101,7 +101,7 @@ def format_single_for_prediction(
 def format_for_training(
     examples: dict[str, list[str]],
     source_lang_code: str = "fr",
-    target_lang_code: str = "mos",
+    target_lang_code: str = "mos_Latn",
     source_field: str = "french",
     target_field: str = "moore",
     tokenizer: PreTrainedTokenizer | None = None,
