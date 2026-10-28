@@ -4,10 +4,9 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from tqdm import tqdm
 from sacrebleu.metrics import BLEU, CHRF
 
-from translategemma_finetune.finetune import DEFAULT_OUTPUT_DIR, ModelArguments, get_eos_token_ids
+from translategemma_finetune.finetune import ModelArguments, get_eos_token_ids
 from translategemma_finetune.templates import (
     add_languages_to_chat_template,
     format_single_for_prediction,
@@ -24,6 +23,13 @@ class EvaluationDataArguments:
         default=DEFAULT_DATASET, metadata={"help": "Hugging Face dataset name."}
     )
     dataset_split: str = field(default="test", metadata={"help": "Dataset split to evaluate on."})
+    data_files: str | None = field(
+        default=None,
+        metadata={
+            "help": "Load only this file from --dataset_name, e.g. benchmark_data/sentence_level/"
+            "dev/fra_Latn-mos_Latn.parquet for facebook/bouquet. Its rows are in split 'train'."
+        },
+    )
     source_field: str = field(
         default="french", metadata={"help": "Dataset column containing source text."}
     )
@@ -59,13 +65,17 @@ class EvaluationDataArguments:
 
 @dataclass
 class EvaluationArguments:
-    adapter_path: str | None = field(
-        default=DEFAULT_OUTPUT_DIR,
+    model: str | None = field(
+        default=None,
         metadata={
-            "help": "LoRA adapter path. Pass an empty string to evaluate --model_name directly."
+            "help": "Model to generate with on Modal: an HF repo id or a /models/... path in the "
+            "translategemma-models volume. Defaults to --model_name."
         },
     )
-    batch_size: int = field(default=4, metadata={"help": "Generation batch size."})
+    adapter: str | None = field(
+        default=None,
+        metadata={"help": "Optional LoRA adapter on Modal: an HF repo id or a /models/... path."},
+    )
     max_new_tokens: int = field(default=128, metadata={"help": "Maximum generated tokens."})
     temperature: float = field(
         default=0.0, metadata={"help": "Sampling temperature. 0 uses greedy decoding."}
@@ -93,24 +103,18 @@ def parse_args() -> tuple[ModelArguments, EvaluationDataArguments, EvaluationArg
 def load_dataset_split(data_args: EvaluationDataArguments) -> Any:
     from datasets import load_dataset
 
-    dataset = load_dataset(data_args.dataset_name, split=data_args.dataset_split)
+    dataset = load_dataset(
+        data_args.dataset_name, data_files=data_args.data_files, split=data_args.dataset_split
+    )
     if data_args.max_eval_samples is not None:
         dataset = dataset.select(range(min(data_args.max_eval_samples, len(dataset))))
     return dataset
 
 
-def load_tokenizer(model_args: ModelArguments, eval_args: EvaluationArguments) -> Any:
+def load_tokenizer(model_args: ModelArguments) -> Any:
     from transformers import AutoTokenizer
 
-    # The adapter saves the tokenizer with the chat template used during training.
-    tokenizer = None
-    if eval_args.adapter_path:
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(eval_args.adapter_path)
-        except OSError:
-            pass
-    if tokenizer is None:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
     if hasattr(tokenizer, "model_max_length"):
         tokenizer.model_max_length = model_args.max_seq_length
     if hasattr(tokenizer, "add_bos_token"):
@@ -138,104 +142,68 @@ def maybe_apply_chat_template(tokenizer: Any, data_args: EvaluationDataArguments
     return tokenizer
 
 
-def load_model(model_args: ModelArguments, eval_args: EvaluationArguments) -> Any:
-    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
-
-    if model_args.load_in_4bit and model_args.load_in_8bit:
-        raise ValueError("Use only one of --load_in_4bit or --load_in_8bit.")
-
-    quantization_config = None
-    if model_args.load_in_4bit or model_args.load_in_8bit:
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=model_args.load_in_4bit,
-            load_in_8bit=model_args.load_in_8bit,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
+def tokenize_prompts(
+    tokenizer: Any,
+    sources: list[str],
+    model_args: ModelArguments,
+    data_args: EvaluationDataArguments,
+) -> list[list[int]]:
+    prompts = [
+        format_single_for_prediction(
+            source_text=source,
+            source_lang_code=data_args.source_lang_code,
+            target_lang_code=data_args.target_lang_code,
+            tokenizer=tokenizer,
+            use_chat_template=data_args.use_chat_template,
         )
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_name,
-        device_map="auto",
-        quantization_config=quantization_config,
-        dtype="auto",
-    )
-
-    if eval_args.adapter_path:
-        from peft import PeftModel
-
-        model = PeftModel.from_pretrained(model, eval_args.adapter_path)
-
-    model.config.use_cache = True
-    model.eval()
-    return model
+        for source in sources
+    ]
+    # Token ids are passed as-is, so vLLM neither re-renders nor adds a second <bos>.
+    return tokenizer(
+        prompts,
+        truncation=True,
+        max_length=model_args.max_seq_length,
+        add_special_tokens=False,
+    )["input_ids"]
 
 
-def iter_batches(dataset: Any, batch_size: int) -> Any:
-    for start in tqdm(range(0, len(dataset), batch_size), desc="Generating predictions"):
-        yield dataset[start : start + batch_size]
+def build_sampling(eval_args: EvaluationArguments, stop_token_ids: list[int]) -> dict[str, Any]:
+    sampling: dict[str, Any] = {
+        "max_tokens": eval_args.max_new_tokens,
+        "stop_token_ids": stop_token_ids,
+        "repetition_penalty": eval_args.repetition_penalty,
+        "temperature": 0.0,  # greedy
+    }
+    if eval_args.temperature > 0:
+        sampling.update(
+            {
+                "temperature": eval_args.temperature,
+                "top_p": eval_args.top_p,
+                "top_k": eval_args.top_k,
+            }
+        )
+    return sampling
 
 
 def generate_predictions(
-    model: Any,
-    tokenizer: Any,
-    dataset: Any,
+    prompt_token_ids: list[list[int]],
+    stop_token_ids: list[int],
     model_args: ModelArguments,
-    data_args: EvaluationDataArguments,
     eval_args: EvaluationArguments,
-) -> tuple[list[str], list[str], list[str]]:
-    predictions: list[str] = []
-    references: list[str] = []
-    sources: list[str] = []
+) -> list[str]:
+    import modal
 
-    for batch in iter_batches(dataset, eval_args.batch_size):
-        batch_sources = batch[data_args.source_field]
-        batch_references = batch[data_args.target_field]
-        prompts = [
-            format_single_for_prediction(
-                source_text=source,
-                source_lang_code=data_args.source_lang_code,
-                target_lang_code=data_args.target_lang_code,
-                tokenizer=tokenizer,
-                use_chat_template=data_args.use_chat_template,
-            )
-            for source in batch_sources
-        ]
-        inputs = tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=model_args.max_seq_length,
-            add_special_tokens=False,
-        ).to(model.device)
+    from translategemma_finetune.modal_generate import app, generate
 
-        do_sample = eval_args.temperature > 0
-        generation_kwargs: dict[str, Any] = {
-            "max_new_tokens": eval_args.max_new_tokens,
-            "do_sample": do_sample,
-            "use_cache": True,
-            "pad_token_id": tokenizer.pad_token_id,
-            "eos_token_id": get_eos_token_ids(tokenizer),
-            "repetition_penalty": eval_args.repetition_penalty,
-        }
-        if do_sample:
-            generation_kwargs.update(
-                {
-                    "temperature": eval_args.temperature,
-                    "top_p": eval_args.top_p,
-                    "top_k": eval_args.top_k,
-                }
-            )
-
-        outputs = model.generate(**inputs, **generation_kwargs)
-        generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
-        batch_predictions = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
-
-        sources.extend(batch_sources)
-        references.extend(batch_references)
-        predictions.extend(prediction.strip() for prediction in batch_predictions)
-
-    return sources, references, predictions
+    with modal.enable_output(), app.run():
+        predictions = generate.remote(
+            model=eval_args.model or model_args.model_name,
+            adapter=eval_args.adapter,
+            prompt_token_ids=prompt_token_ids,
+            sampling=build_sampling(eval_args, stop_token_ids),
+            max_model_len=model_args.max_seq_length + eval_args.max_new_tokens,
+        )
+    return [prediction.strip() for prediction in predictions]
 
 
 def compute_metrics(predictions: list[str], references: list[str]) -> dict[str, float]:
@@ -277,16 +245,16 @@ def main() -> None:
     load_dotenv()
     model_args, data_args, eval_args = parse_args()
     dataset = load_dataset_split(data_args)
-    tokenizer = load_tokenizer(model_args, eval_args)
+    tokenizer = load_tokenizer(model_args)
     maybe_apply_chat_template(tokenizer, data_args)
-    model = load_model(model_args, eval_args)
-    sources, references, predictions = generate_predictions(
-        model,
-        tokenizer,
-        dataset,
-        model_args,
-        data_args,
-        eval_args,
+    sources = dataset[data_args.source_field]
+    references = dataset[data_args.target_field]
+    prompt_token_ids = tokenize_prompts(tokenizer, sources, model_args, data_args)
+    stop_token_ids = get_eos_token_ids(tokenizer)
+    if isinstance(stop_token_ids, int):
+        stop_token_ids = [stop_token_ids]
+    predictions = generate_predictions(
+        prompt_token_ids, stop_token_ids or [], model_args, eval_args
     )
     scores = compute_metrics(predictions, references)
     write_predictions(eval_args.output_predictions_path, sources, references, predictions)

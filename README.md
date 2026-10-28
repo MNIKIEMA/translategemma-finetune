@@ -86,31 +86,31 @@ uv run translategemma-merge-lora \
   --output_dir translategemma-4b-it_16bit
 ```
 
-Evaluate a fine-tuned LoRA adapter with BLEU and chrF++:
+Evaluate a model with BLEU and chrF++. Prompts are rendered and tokenized locally
+with the tokenizer from `--model_name`, so they match the training format exactly;
+generation runs offline with vLLM in a Modal function (`modal_generate.py`) that
+starts for the run and stops when it is done. Upload the adapter to the Modal
+volume, then evaluate it on top of the base model:
 
 ```bash
+uvx modal volume put translategemma-models outputs/translategemma-4b-it-fr-mos-lora /fr-mos-lora
 uv run translategemma-evaluate \
-  --adapter_path outputs/translategemma-4b-it-fr-mos-lora \
+  --adapter /models/fr-mos-lora \
   --dataset_split test \
   --source_lang_code fr \
   --target_lang_code mos_Latn \
   --output_predictions_path outputs/predictions.jsonl
 ```
 
-The evaluation script loads the base model from `--model_name`, applies the
-adapter from `--adapter_path`, generates translations for the dataset split,
-and reports corpus BLEU and chrF++.
+`--adapter` and `--model` also accept HF repo ids. To evaluate a merged model,
+pass it as `--model` without `--adapter`. Set `MODAL_GPU` to change the GPU type
+(default `A100-40GB`).
 
-To evaluate a merged model instead, pass the merged model directory as
-`--model_name` and disable adapter loading with an empty `--adapter_path`:
+To keep a model running behind an OpenAI-compatible endpoint instead, e.g. for a
+demo, use `modal_serve.py`:
 
 ```bash
-uv run translategemma-evaluate \
-  --model_name translategemma-4b-it_16bit \
-  --adapter_path "" \
-  --dataset_split test \
-  --source_lang_code fr \
-  --target_lang_code mos_Latn
+ADAPTER=/models/fr-mos-lora VLLM_API_KEY=<key> uvx modal serve modal_serve.py
 ```
 
 ## Development
