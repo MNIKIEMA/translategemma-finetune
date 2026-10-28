@@ -15,7 +15,7 @@ else
 fi
 
 "${RUN[@]}" \
-  --test true \
+  --test false \
   --lora-r 128 \
   --lora-alpha 256 \
   --max-seq-length 512 \
@@ -27,7 +27,7 @@ fi
   --max-steps -1 \
   --num-train-epochs 1 \
   --max-grad-norm 1.0 \
-  --learning-rate 6e-6 \
+  --learning-rate 1e-4 \
   --lr-scheduler-type cosine_with_min_lr \
   --lr-scheduler-kwargs '{"min_lr": 1e-6}' \
   --optim adamw_8bit \

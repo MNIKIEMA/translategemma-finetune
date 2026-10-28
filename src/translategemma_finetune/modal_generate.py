@@ -18,6 +18,8 @@ import modal
 
 VLLM_VERSION = "0.30.0"
 GPU = os.environ.get("MODAL_GPU", "A100-40GB")
+# Modal secret holding HF_TOKEN.
+HF_SECRET = os.environ.get("MODAL_HF_SECRET", "huggingface")
 MODELS = "/models"
 HF_HOME = "/root/.cache/huggingface"
 MAX_LORA_RANK = 128
@@ -39,7 +41,7 @@ hf_cache = modal.Volume.from_name("translategemma-hf-cache", create_if_missing=T
     image=image,
     gpu=GPU,
     volumes={MODELS: models, HF_HOME: hf_cache},
-    secrets=[modal.Secret.from_name("huggingface")],
+    secrets=[modal.Secret.from_name(HF_SECRET)],
     timeout=6 * 60 * 60,
 )
 def generate(

@@ -28,6 +28,8 @@ load_dotenv()
 
 TORCH_VERSION = "2.10.0"
 GPU = os.environ.get("MODAL_GPU", "A100-80GB")
+# Modal secret holding HF_TOKEN.
+HF_SECRET = os.environ.get("MODAL_HF_SECRET", "huggingface")
 DATA = "/data"
 MODELS = "/models"
 HF_HOME = "/root/.cache/huggingface"
@@ -72,7 +74,7 @@ forwarded = modal.Secret.from_dict(
     image=image,
     gpu=GPU,
     volumes={DATA: data_volume, MODELS: models, HF_HOME: hf_cache},
-    secrets=[modal.Secret.from_name("huggingface"), forwarded],
+    secrets=[modal.Secret.from_name(HF_SECRET), forwarded],
     timeout=TIMEOUT,
 )
 def train(argv: list[str]) -> None:

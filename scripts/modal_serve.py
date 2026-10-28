@@ -26,6 +26,8 @@ import modal
 
 VLLM_VERSION = "0.30.0"
 GPU = os.environ.get("MODAL_GPU", "A100-40GB")
+# Modal secret holding HF_TOKEN.
+HF_SECRET = os.environ.get("MODAL_HF_SECRET", "huggingface")
 MODEL = os.environ.get("MODEL", "google/translategemma-4b-it")
 ADAPTER = os.environ.get("ADAPTER")
 API_KEY = os.environ.get("VLLM_API_KEY")
@@ -46,7 +48,7 @@ image = (
 app = modal.App("translategemma-vllm")
 models = modal.Volume.from_name("translategemma-models", create_if_missing=True)
 hf_cache = modal.Volume.from_name("translategemma-hf-cache", create_if_missing=True)
-secrets = [modal.Secret.from_name("huggingface")]
+secrets = [modal.Secret.from_name(HF_SECRET)]
 if API_KEY:
     secrets.append(modal.Secret.from_dict({"VLLM_API_KEY": API_KEY}))
 

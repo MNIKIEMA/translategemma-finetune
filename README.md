@@ -93,8 +93,9 @@ uv run translategemma eval bouquet --adapter /models/fr-mos-lora
 - The base model is cached in the `translategemma-hf-cache` volume.
 - `--detach` keeps the run going after the terminal closes; follow it in the
   Modal dashboard.
-- The `huggingface` Modal secret provides `HF_TOKEN`; `WANDB_API_KEY` (and
-  `WANDB_ENTITY`) are forwarded from your environment or `.env`.
+- The `huggingface` Modal secret provides `HF_TOKEN` (set `MODAL_HF_SECRET` to
+  use another secret name, for `eval` and `modal_serve.py` too); `WANDB_API_KEY`
+  (and `WANDB_ENTITY`) are forwarded from your environment or `.env`.
 
 Download an adapter with
 `uvx modal volume get translategemma-models fr-mos-lora ./outputs/fr-mos-lora`.
