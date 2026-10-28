@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
+# TRAINER=train-modal runs the same training on a Modal GPU.
+TRAINER="${TRAINER:-train}"
+
 if [[ "${USE_UV:-0}" == "1" ]]; then
-  RUN=(uv run translategemma train)
+  RUN=(uv run translategemma "$TRAINER")
 else
-  RUN=(translategemma train)
+  RUN=(translategemma "$TRAINER")
 fi
 
 "${RUN[@]}" \

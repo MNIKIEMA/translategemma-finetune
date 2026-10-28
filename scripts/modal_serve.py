@@ -3,8 +3,8 @@
 For a long-running endpoint (demos, apps). Evaluation uses the offline function in
 ``translategemma_finetune/modal_generate.py`` instead.
 
-    uvx modal serve modal_serve.py    # ephemeral: stops with Ctrl-C
-    uvx modal deploy modal_serve.py   # persistent: scales to zero when idle
+    uvx modal serve scripts/modal_serve.py    # ephemeral: stops with Ctrl-C
+    uvx modal deploy scripts/modal_serve.py   # persistent: scales to zero when idle
 
 Configure the deployment with environment variables when running the command:
 
