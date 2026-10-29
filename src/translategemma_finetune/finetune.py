@@ -23,6 +23,8 @@ from transformers import TrainerCallback, TrainingArguments as HFTrainingArgumen
 DEFAULT_MODEL = "google/translategemma-4b-it"
 DEFAULT_OUTPUT_DIR = "outputs/translategemma-4b-it-fr-mos-lora"
 DEFAULT_MERGED_DIR = "translategemma-4b-it_16bit"
+# Best on BOUQuET dev with greedy decoding: stops most into-Mooré loops (2026-10-29 logbook).
+DEFAULT_REPETITION_PENALTY = 1.05
 DEFAULT_TARGET_MODULES = (
     "q_proj",
     "k_proj",
@@ -111,6 +113,10 @@ class DataArguments:
     max_test_samples: int | None = field(
         default=None,
         metadata={"help": "Limit post-training test evaluation to the first N examples."},
+    )
+    repetition_penalty: float = field(
+        default=DEFAULT_REPETITION_PENALTY,
+        metadata={"help": "Repetition penalty for W&B samples, test generation and --test-prompt."},
     )
 
 
@@ -411,6 +417,7 @@ class WandbPredictionCallback(TrainerCallback):
                 **inputs,
                 max_new_tokens=self.data_args.wandb_eval_max_new_tokens,
                 do_sample=False,
+                repetition_penalty=self.data_args.repetition_penalty,
                 eos_token_id=get_eos_token_ids(tokenizer),
                 pad_token_id=tokenizer.pad_token_id,
             )
@@ -554,6 +561,7 @@ def generate_predictions(
                 **inputs,
                 max_new_tokens=data_args.test_max_new_tokens,
                 do_sample=False,
+                repetition_penalty=data_args.repetition_penalty,
                 eos_token_id=get_eos_token_ids(tokenizer),
                 pad_token_id=tokenizer.pad_token_id,
             )
@@ -657,6 +665,7 @@ def generate_sample(model: Any, processor: Any, data_args: DataArguments) -> Non
         **inputs,
         max_new_tokens=100,
         do_sample=False,
+        repetition_penalty=data_args.repetition_penalty,
         eos_token_id=get_eos_token_ids(tokenizer),
         pad_token_id=tokenizer.pad_token_id,
     )

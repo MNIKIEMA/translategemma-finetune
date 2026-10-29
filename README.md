@@ -121,6 +121,10 @@ added to it too. `translategemma eval` takes the same options.
 the training format exactly, then generates offline with vLLM in a Modal
 function (`modal_generate.py`) that starts for the run and stops when it is
 done. Scores are printed per direction, plus `all` when there are several.
+Decoding is greedy with a repetition penalty of 1.05, which stops most loops in
+Mooré outputs; pass `--repetition-penalty 1` to turn it off. `translategemma
+train` uses the same default for its W&B samples, test generation and
+`--test-prompt`.
 
 ```bash
 uv run translategemma eval bouquet                        # BOUQuET dev, both directions

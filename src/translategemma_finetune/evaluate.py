@@ -21,6 +21,7 @@ from translategemma_finetune.data import (
 )
 from translategemma_finetune.finetune import (
     DEFAULT_MODEL,
+    DEFAULT_REPETITION_PENALTY,
     directions,
     get_eos_token_ids,
     maybe_apply_chat_template,
@@ -81,7 +82,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     sampling.add_argument("--temperature", type=float, default=0.0, help="0 decodes greedily.")
     sampling.add_argument("--top-p", type=float, default=0.9)
     sampling.add_argument("--top-k", type=int, default=50)
-    sampling.add_argument("--repetition-penalty", type=float, default=1.0)
+    sampling.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=DEFAULT_REPETITION_PENALTY,
+        help=f"1 disables it (default: {DEFAULT_REPETITION_PENALTY}).",
+    )
     return parser.parse_args(argv)
 
 
