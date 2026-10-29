@@ -53,13 +53,28 @@ Output checks on the LoRA predictions:
 "Looping" = more than 8 words with under 40% unique words, e.g.
 "yɩɩg yʋʋm a tãab pʋgẽ, yɩɩg yʋʋm a tãab pʋgẽ, ..." until the 128-token limit.
 
+### Repetition penalty (BOUQuET dev, same adapter)
+
+| Penalty | fr→mos BLEU / chrF++ | mos→fr BLEU / chrF++ | fr→mos looping | fr→mos length ratio |
+|---:|---:|---:|---:|---:|
+| 1.0 | 5.93 / 21.75 | 7.38 / 22.77 | 45 | 1.23 |
+| **1.05** | **7.11 / 23.62** | **7.38 / 23.66** | 6 | 1.06 |
+| 1.1 | 6.39 / 23.09 | 6.52 / 23.50 | 1 | 1.07 |
+| 1.2 | 3.97 / 20.49 | 4.37 / 23.25 | 1 | 1.08 |
+
+1.05 removes most loops (45 → 6) and is best on every score. Higher
+penalties remove the last loops but hurt BLEU: vLLM's penalty also covers
+prompt tokens and words the translation legitimately repeats (mos→fr outputs
+get 24% longer at 1.2).
+
 ## Notes / decisions
 
 - The model now writes Mooré (the base wrote Swahili-like text); fr→mos
   chrF++ on BOUQuET went from 8.5 to 21.8.
 - Into-Mooré outputs loop on 7–9% of sentences, which also inflates the length
-  ratio; mos→fr rarely loops. Next: re-score with `--repetition-penalty`
-  (e.g. 1.1) to see how much of the gap is decoding.
+  ratio; mos→fr rarely loops. A repetition penalty of 1.05 fixes most of it at
+  decoding time (see above); the looping is still a model weakness to train
+  away.
 - Sentences that do not loop are often fluent but loosely faithful (e.g. "les
   deux parties … la loi" → "les gens … cette élection").
 - moore-web test is in-domain for most of the mix; BOUQuET is the
