@@ -88,3 +88,5 @@ would select on the leaderboard's own test set.
 - Next levers for mos→fra: fewer repeats of moore-web rows (more unique
   sentence data, lower reviewed share), a higher into-French ratio than 40%,
   or a higher learning rate for one epoch.
+- A fair comparison with Hy-MT needs the same data and loss: plan in
+  [2026-10-29-plan-fair-hy-mt-comparison.md](2026-10-29-plan-fair-hy-mt-comparison.md).
