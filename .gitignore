@@ -14,3 +14,6 @@ mynotes.md
 
 # Generated training data
 data/
+
+# Local training outputs and submissions
+outputs/
