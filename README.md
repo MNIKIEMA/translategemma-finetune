@@ -135,6 +135,15 @@ uv run translategemma eval data/fra-mos-mix --split validation
 uv run translategemma eval path/to/rows.jsonl --output outputs/predictions.jsonl
 ```
 
+The Burkimbia MT leaderboard scores Mooré on BOUQuET sentence-level test.
+`--submission` writes its CSV (`direction,id,translation`, with `fra-mos` /
+`mos-fra` and BOUQuET ids):
+
+```bash
+uv run translategemma eval bouquet --split test --adapter /models/fr-mos-lora \
+  --repetition-penalty 1.05 --submission outputs/submissions/fr-mos-lora.csv
+```
+
 The model is `google/translategemma-4b-it` unless you pass `--model`. Adapters
 trained with `train-modal` are already in the Modal volume; upload a locally
 trained one and evaluate it on top of the base model:

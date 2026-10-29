@@ -7,6 +7,7 @@ generation runs offline with vLLM in a Modal function (``modal_generate.py``).
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,8 @@ from translategemma_finetune.data import (
     DEFAULT_EVAL_SPLITS,
     DIRECTIONS,
     EVAL_SETS,
+    FRENCH_CODE,
+    MOORE_CODE,
     SOURCE_COLUMN,
     TARGET_COLUMN,
     load_eval_set,
@@ -28,6 +31,9 @@ from translategemma_finetune.finetune import (
     metrics_by_direction,
 )
 from translategemma_finetune.templates import format_single_for_prediction
+
+# Language codes in Burkimbia MT leaderboard directions, e.g. fra-mos.
+LEADERBOARD_CODES = {FRENCH_CODE: "fra", MOORE_CODE: "mos"}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -58,6 +64,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--max-samples", type=int, help="Score only the first N rows.")
     parser.add_argument("--output", type=Path, help="Write sources, references, predictions here.")
+    parser.add_argument(
+        "--submission",
+        type=Path,
+        help="Write a Burkimbia MT leaderboard CSV (direction, id, translation) here. "
+        "The leaderboard scores Mooré on `bouquet --split test`.",
+    )
 
     prompt = parser.add_argument_group("prompt")
     prompt.add_argument(
@@ -161,17 +173,33 @@ def write_predictions(
     row_directions: list[str],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    ids = rows.get("id", [None] * len(predictions))
     with path.open("w", encoding="utf-8") as output_file:
-        for direction, source, reference, prediction in zip(
-            row_directions, rows[SOURCE_COLUMN], rows[TARGET_COLUMN], predictions, strict=True
+        for row_id, direction, source, reference, prediction in zip(
+            ids, row_directions, rows[SOURCE_COLUMN], rows[TARGET_COLUMN], predictions, strict=True
         ):
             record = {
+                "id": row_id,
                 "direction": direction,
                 "source": source,
                 "reference": reference,
                 "prediction": prediction,
             }
             output_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def write_submission(path: Path, rows: dict[str, list[Any]], predictions: list[str]) -> None:
+    if "id" not in rows:
+        raise ValueError("--submission needs rows with an id column, e.g. `bouquet`.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as output_file:
+        writer = csv.writer(output_file)
+        writer.writerow(["direction", "id", "translation"])
+        for row_id, source_code, target_code, prediction in zip(
+            rows["id"], rows["source_lang_code"], rows["target_lang_code"], predictions, strict=True
+        ):
+            direction = f"{LEADERBOARD_CODES[source_code]}-{LEADERBOARD_CODES[target_code]}"
+            writer.writerow([direction, row_id, prediction])
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -195,6 +223,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.output is not None:
         write_predictions(args.output, rows, predictions, row_directions)
+    if args.submission is not None:
+        write_submission(args.submission, rows, predictions)
     scores = metrics_by_direction(row_directions, predictions, rows[TARGET_COLUMN])
     for direction, metrics in scores.items():
         print(f"{direction}: BLEU {metrics['bleu']:.2f}, chrF++ {metrics['chrfpp']:.2f}")

@@ -67,6 +67,19 @@ penalties remove the last loops but hurt BLEU: vLLM's penalty also covers
 prompt tokens and words the translation legitimately repeats (mos→fr outputs
 get 24% longer at 1.2).
 
+### BOUQuET test and leaderboard submission
+
+BOUQuET sentence-level test (854 per direction), repetition penalty 1.05:
+fr→mos 7.07 / 24.19, mos→fr 7.41 / 23.87 (BLEU / chrF++); 14 looping fr→mos
+outputs. Submission CSV for the Burkimbia MT leaderboard (local, not
+committed): `outputs/submissions/translategemma-4b-it-fra-mos-lora-rp1.05.csv`,
+1,708 rows, no empty translations.
+
+Adapter published (private) as
+[`madoss/translategemma-4b-it-fra-mos-lora`](https://huggingface.co/madoss/translategemma-4b-it-fra-mos-lora)
+(final adapter only, no checkpoints). It was pushed from a Modal function
+reading the volume: the upload from this machine stalled at a few KB/s.
+
 ## Notes / decisions
 
 - The model now writes Mooré (the base wrote Swahili-like text); fr→mos

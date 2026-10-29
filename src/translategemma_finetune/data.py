@@ -89,6 +89,7 @@ def load_bouquet(split: str) -> Any:
     dataset = load_dataset(BOUQUET, data_files=bouquet_files(split), split="train")
     return dataset.map(
         lambda row: {
+            "id": row["uniq_id"],
             SOURCE_COLUMN: row["src_text"],
             TARGET_COLUMN: row["tgt_text"],
             "source_lang_code": BOUQUET_CODES[row["src_lang"]],
