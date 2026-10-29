@@ -23,8 +23,8 @@ from transformers import TrainerCallback, TrainingArguments as HFTrainingArgumen
 DEFAULT_MODEL = "google/translategemma-4b-it"
 DEFAULT_OUTPUT_DIR = "outputs/translategemma-4b-it-fr-mos-lora"
 DEFAULT_MERGED_DIR = "translategemma-4b-it_16bit"
-# Best on BOUQuET dev with greedy decoding: stops most into-Mooré loops (2026-10-29 logbook).
-DEFAULT_REPETITION_PENALTY = 1.05
+# 1 measures the model as is. 1.05 stops most into-Mooré loops (2026-10-29 logbook).
+DEFAULT_REPETITION_PENALTY = 1.0
 DEFAULT_TARGET_MODULES = (
     "q_proj",
     "k_proj",

@@ -74,7 +74,9 @@ get 24% longer at 1.2).
 - Into-Mooré outputs loop on 7–9% of sentences, which also inflates the length
   ratio; mos→fr rarely loops. A repetition penalty of 1.05 fixes most of it at
   decoding time (see above); the looping is still a model weakness to train
-  away.
+  away. Defaults stay at 1.0 so scores measure the model; report each run at
+  1.0 plus a 1.05 row (1.05 was picked on BOUQuET dev, so its dev score is
+  optimistic).
 - Sentences that do not loop are often fluent but loosely faithful (e.g. "les
   deux parties … la loi" → "les gens … cette élection").
 - moore-web test is in-domain for most of the mix; BOUQuET is the

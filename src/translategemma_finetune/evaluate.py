@@ -86,7 +86,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--repetition-penalty",
         type=float,
         default=DEFAULT_REPETITION_PENALTY,
-        help=f"1 disables it (default: {DEFAULT_REPETITION_PENALTY}).",
+        help="1 disables it (default); 1.05 stops most loops in Mooré outputs.",
     )
     return parser.parse_args(argv)
 
