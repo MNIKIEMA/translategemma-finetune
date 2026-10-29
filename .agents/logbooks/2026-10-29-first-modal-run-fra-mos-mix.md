@@ -73,7 +73,8 @@ BOUQuET sentence-level test (854 per direction), repetition penalty 1.05:
 fr→mos 7.07 / 24.19, mos→fr 7.41 / 23.87 (BLEU / chrF++); 14 looping fr→mos
 outputs. Submission CSV for the Burkimbia MT leaderboard (local, not
 committed): `outputs/submissions/translategemma-4b-it-fra-mos-lora-rp1.05.csv`,
-1,708 rows, no empty translations.
+1,708 rows, no empty translations. Replaced by the 2-epoch CSV
+([2026-10-29-two-epoch-run-fra-mos-mix.md](2026-10-29-two-epoch-run-fra-mos-mix.md)).
 
 Adapter published (private) as
 [`madoss/translategemma-4b-it-fra-mos-lora`](https://huggingface.co/madoss/translategemma-4b-it-fra-mos-lora)

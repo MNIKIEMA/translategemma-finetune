@@ -56,6 +56,14 @@ chrF++ (BLEU); looping = outputs of 8+ words with under 40% unique words.
 | 2 epochs | 1.05 | **29.49 (8.95)** | **30.32 (14.62)** | 18 |
 | Hy-MT 1.8B | 1.05 | 30.32 (8.93) | 34.67 (17.41) | — |
 
+## Leaderboard submission
+
+`outputs/submissions/translategemma-4b-it-fra-mos-lora-2ep-rp1.05.csv` (local,
+not committed) replaces the one-epoch CSV: the 2-epoch adapter at penalty
+1.05 for both directions, 1,708 rows, same ids. One model for both
+directions; picking each direction's adapter from these BOUQuET test scores
+would select on the leaderboard's own test set.
+
 ## Notes / decisions
 
 - Validation loss was misleading: it got worse, but the second epoch improved
