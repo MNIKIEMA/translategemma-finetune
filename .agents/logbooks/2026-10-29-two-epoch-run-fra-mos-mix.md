@@ -64,6 +64,12 @@ not committed) replaces the one-epoch CSV: the 2-epoch adapter at penalty
 directions; picking each direction's adapter from these BOUQuET test scores
 would select on the leaderboard's own test set.
 
+## Hub
+
+`madoss/translategemma-4b-it-fra-mos-lora` `main` is now this adapter
+(commit `7516cfe`, pushed from Modal); the one-epoch adapter is tagged
+`1-epoch`.
+
 ## Notes / decisions
 
 - Validation loss was misleading: it got worse, but the second epoch improved
