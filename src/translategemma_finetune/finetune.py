@@ -39,7 +39,10 @@ DEFAULT_TARGET_MODULES = (
 @dataclass
 class ModelArguments:
     model_name: str = field(default=DEFAULT_MODEL, metadata={"help": "Base model to fine-tune."})
-    max_seq_length: int = field(default=256, metadata={"help": "Maximum sequence length."})
+    max_seq_length: int = field(
+        default=512,
+        metadata={"help": "Training rows longer than this many tokens are truncated."},
+    )
     lora_r: int = field(default=16, metadata={"help": "LoRA rank."})
     lora_alpha: int = field(default=32, metadata={"help": "LoRA alpha."})
     lora_dropout: float = field(default=0.0, metadata={"help": "LoRA dropout."})
@@ -333,7 +336,7 @@ def add_lora_adapters(
     return model
 
 
-def build_sft_config(training_args: TrainingArguments) -> Any:
+def build_sft_config(training_args: TrainingArguments, max_length: int) -> Any:
     from trl import SFTConfig
 
     sft_fields = {sft_field.name for sft_field in fields(SFTConfig)}
@@ -342,6 +345,8 @@ def build_sft_config(training_args: TrainingArguments) -> Any:
         for field_name in sft_fields
         if hasattr(training_args, field_name)
     }
+    # SFTConfig's own default is 1024, whatever the tokenizer's model_max_length.
+    sft_kwargs["max_length"] = max_length
     return SFTConfig(**sft_kwargs)
 
 
@@ -521,10 +526,11 @@ def train(
     training_args: TrainingArguments,
     data_args: DataArguments,
     raw_eval_dataset: Any | None,
+    max_length: int,
 ) -> Any:
     from trl import SFTTrainer
 
-    sft_config = build_sft_config(training_args)
+    sft_config = build_sft_config(training_args, max_length)
     callbacks = build_callbacks(
         training_args,
         data_args,
@@ -764,6 +770,7 @@ def main(argv: list[str] | None = None) -> None:
         training_args,
         data_args,
         raw_eval_dataset,
+        model_args.max_seq_length,
     )
     print(trainer_stats)
     evaluate_test_set(model, processor, data_args)

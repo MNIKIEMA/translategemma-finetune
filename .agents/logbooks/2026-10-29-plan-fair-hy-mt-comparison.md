@@ -93,3 +93,19 @@ in much more than the base model.
   (vs the ~4–5 h estimated for 4-bit).
 - "Bonjour, comment allez-vous ?" → "A Mise, sẽn yaa n yaa?": weak after 30
   steps, but generation stops cleanly at end of turn.
+
+## 2026-11-24: First full bf16 run crashed (CUDA OOM at step 250)
+
+W&B `h5esoe5v`, Modal `ap-YHko2LA1KFso5pxf1Aw3At`. Eval loss 2.17 at step 200
+(warmup, LR near its 1e-4 peak).
+
+- Cause: `--max-seq-length` only set the tokenizer's `model_max_length`, so
+  TRL truncated at its own default `max_length=1024`. 69 of the 50k training
+  rows exceed 512 tokens (6 exceed 1024, the longest 1241; median 146), and
+  `group_by_length` puts them in the same batch. At 16 × 1024 tokens, TRL's
+  token-accuracy metric copies the logits in fp32 (16 GiB), which overflowed
+  80 GB with the bf16 base. Earlier 4-bit runs also trained at up to 1024
+  tokens; they had ~6 GB more headroom.
+- Fix: `--max-seq-length` now sets `SFTConfig.max_length` (default 512, the
+  value `scripts/train.sh` passes). The 69 longer rows are truncated, losing
+  the end of the translation.
