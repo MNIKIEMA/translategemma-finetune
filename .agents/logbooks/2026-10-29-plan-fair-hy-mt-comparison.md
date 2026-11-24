@@ -1,4 +1,4 @@
-# 2026-10-29: Plan — fair TranslateGemma vs Hy-MT comparison (steps 1–4 and 6 done; step 5 open)
+# 2026-10-29: Plan — fair TranslateGemma vs Hy-MT comparison (done; step 5 skipped)
 
 ## Goal
 
@@ -209,3 +209,10 @@ Hy-MT).
   scores within ±0.6 chrF++ of its 200k-mix run.
 - Step 5 (learning rates: Hy-MT 1e-4, TranslateGemma 2e-4) is only needed to
   settle into-Mooré.
+
+## 2026-11-24: Decision — step 5 skipped
+
+No learning-rate sweep: a different rate is not expected to change the
+picture (Hy-MT ahead into French by ~3 chrF++, the two close into Mooré).
+The comparison stands as above, each model at its usual rate (TranslateGemma
+1e-4, Hy-MT 2e-4).
