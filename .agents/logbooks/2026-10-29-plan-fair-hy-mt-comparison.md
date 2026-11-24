@@ -45,9 +45,11 @@ in much more than the base model.
 
 ## Notes
 
-- Pick checkpoints the same way for both, preferably on chrF++ on a dev set
-  (BOUQuET dev) rather than eval loss: eval loss rose in the second epoch
-  while into-Mooré scores improved.
+- Pick checkpoints the same way for both: on eval loss (decided 2026-11-24;
+  generating on a dev set at every eval is too costly). With translation-only
+  loss, eval loss measures the translation alone; in the full-text runs it rose
+  in the second epoch while into-Mooré scores improved, so check whether that
+  still happens.
 - BOUQuET test is the leaderboard set: report on it, never select on it.
 
 ## 2026-11-24: Steps 1 and 2 done (code only, no training run yet)
@@ -75,3 +77,19 @@ in much more than the base model.
 - **Eval loss changes meaning.** It is now the loss on translation tokens only,
   so it is not comparable with eval loss from earlier runs, and is higher in
   absolute terms (the prompt tokens were easy to predict).
+
+## 2026-11-24: Modal smoke run (30 steps, bf16 + translation-only loss)
+
+`MODAL_HF_SECRET=huggingface-secret TRAINER=train-modal bash scripts/train.sh
+--data madoss/translategemma-fra-mos-mix --output-dir smoke-bf16-completion-only
+--max-steps 30 --eval-steps 15 --save-steps 15 --report-to none
+--wandb-eval-samples 0`, A100-80GB.
+
+- Runs end to end: evals, checkpoints, adapter saved to
+  `/models/smoke-bf16-completion-only`.
+- Train loss 6.4 (step 1) → 1.42 (step 30); eval loss 1.83 (step 15) → 1.68
+  (step 30).
+- ~2 s/step at effective batch 32, so ~1 h per epoch of the 50k rows plus evals
+  (vs the ~4–5 h estimated for 4-bit).
+- "Bonjour, comment allez-vous ?" → "A Mise, sẽn yaa n yaa?": weak after 30
+  steps, but generation stops cleanly at end of turn.
