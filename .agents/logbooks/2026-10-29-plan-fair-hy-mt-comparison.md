@@ -132,3 +132,48 @@ TRAINER=train-modal bash scripts/train.sh --data madoss/translategemma-fra-mos-m
   y menga ?" (penalty 1.0).
 - Next: step 6 evaluation (BOUQuET test, moore-web test; penalty 1.0 and 1.05;
   256 max new tokens).
+
+## 2026-11-24: Step 6 evaluation of the bf16 translation-only adapter
+
+`translategemma eval {bouquet,moore-web} --split test --direction both --adapter
+/models/translategemma-bf16-completion-only --max-new-tokens 256 --temperature 0
+--repetition-penalty {1.0,1.05}` (vLLM, A100-40GB). Predictions in
+`outputs/eval/bf16-completion-only/` (local, not committed). chrF++ (BLEU);
+looping = outputs of 8+ words with under 40% unique words, fra→mos.
+
+"Old 2 ep" is the 4-bit full-text-loss run of
+[2026-10-29-two-epoch-run-fra-mos-mix.md](2026-10-29-two-epoch-run-fra-mos-mix.md),
+scored with 128 max new tokens; Hy-MT used 256.
+
+**BOUQuET test, sentence level** (854 per direction):
+
+| Model | Penalty | fra→mos | mos→fra | fra→mos looping |
+|---|---:|---:|---:|---:|
+| Old 2 ep | 1.0 | 24.41 (8.18) | 23.54 (6.46) | 27 |
+| **bf16, translation-only** | 1.0 | 24.92 (7.76) | 24.34 (6.82) | 15 |
+| Old 2 ep | 1.05 | 24.80 (8.06) | 23.40 (6.07) | 10 |
+| **bf16, translation-only** | 1.05 | 24.93 (7.70) | 24.83 (6.59) | 3 |
+| Hy-MT 1.8B | 1.05 | 25.57 (7.08) | 27.45 (8.34) | 12 |
+
+**moore-web test** (2,573 per direction):
+
+| Model | Penalty | fra→mos | mos→fra | fra→mos looping |
+|---|---:|---:|---:|---:|
+| Old 2 ep | 1.0 | 29.00 (8.95) | 30.19 (14.82) | 87 |
+| **bf16, translation-only** | 1.0 | 30.63 (8.94) | 31.34 (15.78) | 74 |
+| Old 2 ep | 1.05 | 29.49 (8.95) | 30.32 (14.62) | 18 |
+| **bf16, translation-only** | 1.05 | 31.02 (9.27) | 31.75 (15.63) | 15 |
+| Hy-MT 1.8B | 1.05 | 30.32 (8.93) | 34.67 (17.41) | — |
+
+- chrF++ improves in every direction and set; most into French (+1.4 BOUQuET,
+  +1.4 moore-web at penalty 1.05). BLEU drops slightly on BOUQuET fra→mos.
+- vs Hy-MT: ahead on moore-web fra→mos (31.02 vs 30.32), behind on BOUQuET
+  fra→mos (24.93 vs 25.57) and into French (gap 2.6 BOUQuET, 2.9 moore-web;
+  was 4.05 and 4.35).
+- Not yet a fair comparison: Hy-MT still trained on the 200k 10-direction mix
+  (step 4 pending). The change bundles translation-only loss, bf16, the
+  template-whitespace fix and 512-token truncation, and the old run was scored
+  with 128 max new tokens, so the gain is not attributable to one of them.
+- vLLM logs "Chat template warmup failed" at startup: its warm-up request is
+  not in TranslateGemma's content format. Harmless: prompts are rendered
+  locally; no empty predictions on BOUQuET, 1 on moore-web mos→fra.
