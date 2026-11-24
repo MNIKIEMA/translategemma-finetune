@@ -4,6 +4,8 @@ import json
 import re
 from transformers import PreTrainedTokenizer
 
+# What the chat template writes after each turn.
+END_OF_TURN = "<end_of_turn>\n"
 LANGUAGES_BLOCK_END_RE = re.compile(r"\A\{%- set languages = \{\n.*?(?=\n\}\n-%\})", re.DOTALL)
 
 
@@ -168,6 +170,14 @@ def format_for_training(
     tokenizer: PreTrainedTokenizer | None = None,
     use_chat_template: bool = False,
 ) -> dict[str, list[str]]:
+    """Prompt/completion rows: the prompt is exactly what inference sends, the completion is the
+    translation and its end-of-turn marker.
+
+    SFTTrainer then computes the loss on the completion only (``completion_only_loss``) and
+    appends ``<eos>``. The completion is built here rather than cut from the rendered chat: the
+    TranslateGemma template emits ``"\\n" + 8 spaces`` between ``<start_of_turn>model\\n`` and
+    the reply (its Jinja tags do not strip that whitespace), which the model would learn to emit.
+    """
     if use_chat_template and tokenizer is None:
         raise ValueError("tokenizer must be provided when use_chat_template=True")
 
@@ -175,28 +185,20 @@ def format_for_training(
     source_codes, target_codes = row_lang_codes(
         examples, len(sources), source_lang_code, target_lang_code
     )
-    texts = []
+    prompts, completions = [], []
     for source, target, row_source_code, row_target_code in zip(
         sources, targets, source_codes, target_codes, strict=True
     ):
-        messages = create_chat_messages(
-            source,
-            target_text=target,
-            source_lang_code=row_source_code,
-            target_lang_code=row_target_code,
-        )
-
-        if use_chat_template and tokenizer is not None:
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=False,
+        prompts.append(
+            format_single_for_prediction(
+                source_text=source,
+                source_lang_code=row_source_code,
+                target_lang_code=row_target_code,
+                tokenizer=tokenizer,
+                use_chat_template=use_chat_template,
             )
-        else:
-            json_str = json.dumps(messages[0]["content"], ensure_ascii=False)
-            prefix = raw_prompt_prefix(tokenizer)
-            text = f"{prefix}user\n{json_str}\nmodel\n{messages[1]['content']}"
+        )
+        # The chat template trims the reply too.
+        completions.append(target.strip() + END_OF_TURN if use_chat_template else target)
 
-        texts.append(text)
-
-    return {"text": texts}
+    return {"prompt": prompts, "completion": completions}

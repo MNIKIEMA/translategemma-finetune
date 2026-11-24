@@ -1,4 +1,4 @@
-# 2026-10-29: Plan — fair TranslateGemma vs Hy-MT comparison (not started)
+# 2026-10-29: Plan — fair TranslateGemma vs Hy-MT comparison (steps 1–2 done)
 
 ## Goal
 
@@ -49,3 +49,29 @@ in much more than the base model.
   (BOUQuET dev) rather than eval loss: eval loss rose in the second epoch
   while into-Mooré scores improved.
 - BOUQuET test is the leaderboard set: report on it, never select on it.
+
+## 2026-11-24: Steps 1 and 2 done (code only, no training run yet)
+
+- **Translation-only loss.** `format_for_training` now returns prompt/completion
+  rows. The prompt is the inference prompt (`add_generation_prompt=True`); the
+  completion is the stripped translation + `<end_of_turn>\n`, and TRL appends
+  `<eos>`. TRL 1.4 masks the prompt for prompt/completion data
+  (`completion_only_loss`, new `--completion-only-loss`, default true; false
+  reproduces the old full-text loss). Checked with the real `SFTTrainer` and the
+  TranslateGemma processor on a tiny random Gemma 3: in the batch it builds,
+  only `<translation><end_of_turn>\n<eos>` has labels ≠ -100, e.g. 4 of 89
+  tokens for a short row. `--preview-sample true` now prints the tokens
+  trained on.
+- **Template whitespace.** The TranslateGemma chat template renders the reply
+  as `<start_of_turn>model\n` + `\n` + 8 spaces + reply: its Jinja tags do not
+  strip the newline between them. Earlier runs trained on that whitespace. The
+  completion is now built directly, without it, so the target is what
+  inference prompts are followed by.
+- **bf16.** `scripts/train.sh` now passes `--load-in-4bit false`: LoRA on the
+  bf16 base. PEFT keeps the LoRA weights in fp32. Checked on the tiny model:
+  bf16 base, fp32 adapters, gradient checkpointing, one step with non-zero
+  grad norm. Not yet run on the 4B model; the 4B bf16 weights (~8.6 GB) fit on
+  the A100-80GB.
+- **Eval loss changes meaning.** It is now the loss on translation tokens only,
+  so it is not comparable with eval loss from earlier runs, and is higher in
+  absolute terms (the prompt tokens were easy to predict).

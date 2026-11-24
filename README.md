@@ -69,11 +69,17 @@ bash scripts/train.sh --learning-rate 1e-4
 Useful `translategemma train` options:
 
 ```bash
-uv run translategemma train --preview-sample true     # print the first formatted example and exit
+uv run translategemma train --preview-sample true     # print the first row and the tokens it trains on, then exit
 uv run translategemma train --data madoss/fr-mos-final-data   # a Hub dataset with french/moore columns
 uv run translategemma train --test true               # score the test split after training, per direction
 uv run translategemma train --use-chat-template false  # raw `user\n{json}\nmodel\n` prompts
 ```
+
+Training rows are prompt/completion pairs and the loss is computed on the
+translation only (the reply, `<end_of_turn>` and `<eos>`);
+`--completion-only-loss false` also trains on the prompt, as runs before
+November 2026 did. `scripts/train.sh` trains LoRA on the bf16 base model
+(`--load-in-4bit false`); pass `--load-in-4bit true` for QLoRA.
 
 The adapter and tokenizer are saved to `--output-dir`; pass
 `--save-merged-path <path>` to also save a merged 16-bit model.

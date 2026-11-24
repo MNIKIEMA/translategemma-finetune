@@ -41,7 +41,7 @@ fi
   --save-strategy steps \
   --save-steps 200 \
   --save-total-limit 5 \
-  --load-in-4bit true \
+  --load-in-4bit false \
   --train-sampling-strategy group_by_length \
   --report-to wandb \
   --run-name translategemma-4b-it-fr-mos-lora \

@@ -90,7 +90,8 @@ class DataArguments:
     preview_sample: bool = field(
         default=False,
         metadata={
-            "help": "Format and print the first dataset row, then exit before loading the model."
+            "help": "Print the first training row and the tokens it trains on, then exit before "
+            "loading the model."
         },
     )
     test_prompt: str | None = field(
@@ -136,6 +137,13 @@ class TrainingArguments(HFTrainingArguments):
         default=0.08, metadata={"help": "Warmup ratio if less than 1 or steps if int > 1."}
     )
     learning_rate: float = field(default=2e-4, metadata={"help": "Learning rate."})
+    completion_only_loss: bool = field(
+        default=True,
+        metadata={
+            "help": "Compute the loss on the translation only. False also trains on the prompt, "
+            "as runs before 2026-11 did."
+        },
+    )
     logging_steps: float = field(default=1, metadata={"help": "Logging interval in steps."})
     optim: str = field(default="adamw_8bit", metadata={"help": "Optimizer name."})
     weight_decay: float = field(default=0.001, metadata={"help": "Weight decay."})
@@ -157,9 +165,7 @@ class TrainingArguments(HFTrainingArguments):
     )
     early_stopping_patience: int | None = field(
         default=None,
-        metadata={
-            "help": "Enable early stopping after this many evaluations without improvement."
-        },
+        metadata={"help": "Enable early stopping after this many evaluations without improvement."},
     )
     early_stopping_threshold: float = field(
         default=0.0,
@@ -336,8 +342,38 @@ def build_sft_config(training_args: TrainingArguments) -> Any:
         for field_name in sft_fields
         if hasattr(training_args, field_name)
     }
-    sft_kwargs["dataset_text_field"] = "text"
     return SFTConfig(**sft_kwargs)
+
+
+def preview_training_row(
+    row: dict[str, Any], processor: Any, training_args: TrainingArguments
+) -> None:
+    """Print a prompt/completion row and the tokens it trains on, labelled as SFTTrainer does.
+
+    Mirrors SFTTrainer: ``<eos>`` is appended to the completion, the prompt and prompt+completion
+    are tokenized separately, and its collator sets the prompt labels to -100.
+    """
+    from trl.trainer.sft_trainer import DataCollatorForLanguageModeling
+
+    tokenizer = getattr(processor, "tokenizer", processor)
+    prompt_ids = tokenizer(row["prompt"])["input_ids"]
+    input_ids = tokenizer(row["prompt"] + row["completion"] + tokenizer.eos_token)["input_ids"]
+    if input_ids[: len(prompt_ids)] != prompt_ids:
+        print("warning: the prompt tokenizes differently on its own and with the completion")
+    collator = DataCollatorForLanguageModeling(
+        pad_token_id=tokenizer.pad_token_id,
+        completion_only_loss=training_args.completion_only_loss,
+    )
+    completion_mask = [0] * len(prompt_ids) + [1] * (len(input_ids) - len(prompt_ids))
+    labels = collator([{"input_ids": input_ids, "completion_mask": completion_mask}])["labels"][0]
+    trained = [token for token, label in zip(input_ids, labels.tolist()) if label != -100]
+    print(f"--- prompt ---\n{row['prompt']}")
+    print(f"--- completion ---\n{row['completion']}")
+    print(
+        f"--- trained tokens ({len(trained)} of {len(input_ids)}, "
+        f"completion_only_loss={training_args.completion_only_loss}) ---"
+    )
+    print(repr(tokenizer.decode(trained)))
 
 
 class WandbPredictionCallback(TrainerCallback):
@@ -427,8 +463,7 @@ class WandbPredictionCallback(TrainerCallback):
         generated_tokens = outputs[:, inputs["input_ids"].shape[-1] :]
         decoder = getattr(self.processor, "batch_decode", None) or tokenizer.batch_decode
         predictions = [
-            prediction.strip()
-            for prediction in decoder(generated_tokens, skip_special_tokens=True)
+            prediction.strip() for prediction in decoder(generated_tokens, skip_special_tokens=True)
         ]
         table = wandb.Table(
             columns=["step", "index", "direction", "source", "reference", "prediction"]
@@ -706,7 +741,7 @@ def main(argv: list[str] | None = None) -> None:
         processor = load_processor(model_args)
         maybe_apply_chat_template(processor, data_args)
         dataset = format_training_dataset(raw_dataset, data_args, processor)
-        print(dataset[0]["text"])
+        preview_training_row(dataset[0], processor, training_args)
         return
 
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
