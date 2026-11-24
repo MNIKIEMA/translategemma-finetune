@@ -1,4 +1,4 @@
-# 2026-10-29: Plan — fair TranslateGemma vs Hy-MT comparison (steps 1–2 done)
+# 2026-10-29: Plan — fair TranslateGemma vs Hy-MT comparison (steps 1–4 and 6 done; step 5 open)
 
 ## Goal
 
@@ -177,3 +177,35 @@ scored with 128 max new tokens; Hy-MT used 256.
 - vLLM logs "Chat template warmup failed" at startup: its warm-up request is
   not in TranslateGemma's content format. Harmless: prompts are rendered
   locally; no empty predictions on BOUQuET, 1 on moore-web mos→fra.
+
+## 2026-11-24: Step 4 — Hy-MT on the same 50k rows; same-data comparison
+
+Hy-MT trained on `madoss/translategemma-fra-mos-mix` (`ca1409b`) converted to
+its v1 rows, validated on the same 1,000 moore-web rows, lr 2e-4, 2 epochs,
+best checkpoint by eval loss (step 800, epoch 1.02). Details, command and
+eval-loss curve: `Hy-MT2-Finetune/.agents/experiments/2026-11-24-hy-mt15-1_8b-fra-mos-mix.md`
+(branch `fra-mos-mix-comparison`). Both models rescored with the same
+sacrebleu code; references identical. chrF++ (BLEU), penalty 1.05; looping
+is fra→mos.
+
+| Test set | Model | fra→mos | mos→fra | fra→mos looping |
+|---|---|---|---|---:|
+| BOUQuET (854) | TranslateGemma 4B | 24.93 (7.70) | 24.83 (6.59) | 3 |
+| BOUQuET (854) | Hy-MT 1.8B | 24.94 (6.89) | **27.44** (9.00) | 9 |
+| moore-web (2,573) | TranslateGemma 4B | **31.02** (9.27) | 31.75 (15.63) | 15 |
+| moore-web (2,573) | Hy-MT 1.8B | 30.24 (8.25) | **35.11** (17.45) | 40 |
+
+At penalty 1.0: BOUQuET fra→mos 24.92 vs 23.76, mos→fra 24.34 vs 26.97;
+moore-web fra→mos 30.63 vs 29.10, mos→fra 31.34 vs 34.54 (TranslateGemma vs
+Hy-MT).
+
+- **Into French, Hy-MT is better** on the same data: +2.6 (BOUQuET) and +3.4
+  (moore-web) chrF++, ~2 BLEU. Larger than a learning-rate sweep is likely
+  to close.
+- **Into Mooré they are close**: tied on BOUQuET at 1.05 (TranslateGemma
+  +0.8 BLEU), TranslateGemma +0.8 on moore-web, and it loops less and does
+  not need the penalty as much (+1.2 / +1.5 at 1.0).
+- Hy-MT's extra eng/dyu data did not drive its lead: on these 50k rows it
+  scores within ±0.6 chrF++ of its 200k-mix run.
+- Step 5 (learning rates: Hy-MT 1e-4, TranslateGemma 2e-4) is only needed to
+  settle into-Mooré.
