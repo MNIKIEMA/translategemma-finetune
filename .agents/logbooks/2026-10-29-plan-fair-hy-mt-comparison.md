@@ -109,3 +109,26 @@ W&B `h5esoe5v`, Modal `ap-YHko2LA1KFso5pxf1Aw3At`. Eval loss 2.17 at step 200
 - Fix: `--max-seq-length` now sets `SFTConfig.max_length` (default 512, the
   value `scripts/train.sh` passes). The 69 longer rows are truncated, losing
   the end of the translation.
+
+## 2026-11-24: Step 3 trained — TranslateGemma bf16, translation-only loss
+
+W&B `0739f02e`, Modal `ap-9kIl4awFFMEElk18JCMkec`. `MODAL_HF_SECRET=huggingface-secret
+TRAINER=train-modal bash scripts/train.sh --data madoss/translategemma-fra-mos-mix
+--output-dir translategemma-bf16-completion-only --num-train-epochs 2` (data revision
+`ca1409b`, max length 512). 1 h 29 min of training on an A100-80GB, ~1.8 s/step.
+
+| Step | 200 | 400 | 600 | 800 | 1000 | 1200 | 1400 | 1600 | 1800 | 2000 | 2200 | **2400** | 2600 | 2800 | 3000 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Eval loss | 2.311 | 1.551 | 1.312 | 1.223 | 1.175 | 1.124 | 1.114 | 1.120 | 1.115 | 1.098 | 1.102 | **1.089** | 1.095 | 1.090 | 1.097 |
+
+- Early stopping (patience 3) ended the run at step 3000 of 3126. The saved
+  adapter is the best checkpoint, step 2400 (epoch 1.54, eval loss 1.0895,
+  token accuracy 0.778), in `/models/translategemma-bf16-completion-only`.
+  Checkpoints 2200–3000 are kept next to it.
+- Eval loss flattens at ~1.09–1.12 from step 1400; it does not rise in epoch 2
+  as the full-text eval loss did. Train loss drops from ~0.63 to ~0.51 at the
+  epoch boundary (repeated rows), so the train/eval gap grows.
+- Test prompt "Bonjour, comment allez-vous ?" → "Yiibã, yãmb maanda wãn n tɩgimd
+  y menga ?" (penalty 1.0).
+- Next: step 6 evaluation (BOUQuET test, moore-web test; penalty 1.0 and 1.05;
+  256 max new tokens).
